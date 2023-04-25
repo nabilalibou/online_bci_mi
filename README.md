@@ -1,2 +1,2 @@
 # online_bci_mi
-Offline and online EEG moto-imagery data analysis
+Offline and online EEG motor-imagery data analysis
