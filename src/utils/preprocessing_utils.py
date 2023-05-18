@@ -3,7 +3,6 @@ import mne
 import csv
 import numpy as np
 import mne_icalabel
-from autoreject import get_rejection_threshold, read_reject_log
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -86,7 +85,7 @@ def get_cond_epochs(
     bad_trials=[],
 ):
     """
-    Return epochs cleaned using AutoReject and input 'bad_trials'
+    Cut raw eeg signal into epochs and return them cleaned using input 'bad_trials'
     :param raw_eeg:
     :param events:
     :param event_id:
@@ -97,33 +96,18 @@ def get_cond_epochs(
     :param bad_trials:
     :return:
     """
-    if basl_mode == "mean":
-        epochs = mne.Epochs(
-            raw_eeg,
-            events,
-            event_id=event_id,
-            tmin=epoch_tmin,
-            tmax=epoch_tmax,
-            baseline=baseline,
-        )
-    else:
-        epochs = mne.Epochs(
-            raw_eeg,
-            events,
-            event_id=event_id,
-            tmin=epoch_tmin,
-            tmax=epoch_tmax,
-            baseline=None,
-        )
-        epochs = mne.baseline.rescale(
-            epochs.get_data(),
-            raw_eeg.times,
-            baseline=baseline,
-            mode=basl_mode,
-            copy=True,
-        )
-    reject_dict = get_rejection_threshold(epochs, decim=1)
-    epochs.drop_bad(reject=reject_dict)
+    epochs = mne.Epochs(
+        raw_eeg,
+        events,
+        event_id=event_id,
+        tmin=epoch_tmin,
+        tmax=epoch_tmax,
+        baseline=None,
+    )
+    epochs_arr = mne.baseline.rescale(
+        epochs.get_data(), raw_eeg.times, baseline=baseline, mode=basl_mode, copy=True
+    )
+    epochs = mne.EpochsArray(epochs_arr, epochs.info, verbose=False)
     idx_torem = np.array(bad_trials) - 1
     epochs.drop(idx_torem)
     return epochs
