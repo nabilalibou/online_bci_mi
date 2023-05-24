@@ -43,3 +43,7 @@ for subj in subjects:
                 bad_trials=bad_trials,
                 save_prepro=save_prepro,
             )
+        # Open the saved files
+        # Reshape
+        # Feature
+        # Cross-validation intra subject
