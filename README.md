@@ -1,4 +1,4 @@
-# online_bci_mi
+# Brain-computer-interface using motor imagery
 This project was born from a desire with a colleague to compete with the help of brain-computer-interface (BCI)
 on various known games (rock paper scissor etc.) We therefore measured our EEG cortical activity
 using a 64 channel headset during a homemade protocol combining motor execution and motor imaginary. 
@@ -13,7 +13,7 @@ The first part is an offline study of the recorded EEG signals in order to test 
 and various classification strategy.
 The second part is to perform online analysis and decoding using [MNE-realtime](https://github.com/mne-tools/mne-realtime).
 
-# Experimental setup
+## Experimental setup
 The study included two right-handed participant. During the experiments, the subject sat on a 
 comfortable chair. Each recording session lasted for about an hour and was divided into: an initial
 rest time with eyes closed before fifty loops of a sequence of motor execution followed by motor
@@ -35,26 +35,26 @@ five seconds and are executed in rhythm with an electronic bell sound.
 **Material**: A TMSI 64-channel gel headcap was used to record the EEG signal with a 2064 Hz sampling 
 frequency. The electrode montage was in  accordance with the standard 5% 10/20 System.
 
-# Offline
+## Offline
 
-## Method
+### Method
 To do. Diagram of the preprocessing done.
 
-## Classification scores
+### Classification scores
 
-### Intra-subjects
+#### Intra-subjects
 
-### Inter-subjects
+#### Inter-subjects
 
-# Online
+## Online
 
-## Method
+### Method
 
-## Classification scores
+### Classification scores
 
-### Intra-subjects
+#### Intra-subjects
 
-### Inter-subjects
+#### Inter-subjects
 
-## Video/Gif
+### Video/Gif
 Video/Gif of the online preprocessing and classification.
