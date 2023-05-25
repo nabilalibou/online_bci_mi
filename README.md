@@ -1,7 +1,7 @@
 # Brain-computer-interface using motor imagery
 This project was born from a desire with a colleague to compete with the help of brain-computer-interface (BCI)
 on various known games (rock paper scissor etc.) We therefore measured our EEG cortical activity
-using a 64 channel headset during a homemade protocol combining motor execution and motor imaginary. 
+using a 32 channel headset during a homemade protocol combining motor execution and motor imaginary. 
 The tasks were to lift and then imagine through 3 different sessions: the left arm, the right arm 
 and the right leg.
 
@@ -28,17 +28,30 @@ One session allow the recording of two experiments for one subject. During one s
 performs a movement as a first task and imagine it as a second task. The duration of the tasks are 
 five seconds and are executed in rhythm with an electronic bell sound.
 
-- 1st session: lifting the left arm.
-- 2nd session: lifting the right arm.
-- 3rd session: lifting the right leg.
+- 1st session: lifting the **left arm** during 5 sec (ME) then imagining the same movement (MI).
+- 2nd session: Same ME and MI task with the **right arm**.
+- 3rd session: ME and MI with the **right leg**.
 
-**Material**: A TMSI 64-channel gel headcap was used to record the EEG signal with a 2064 Hz sampling 
+**Material**: A TMSI 32-channel gel headcap was used to record the EEG signal with a 2064 Hz sampling 
 frequency. The electrode montage was in  accordance with the standard 5% 10/20 System.
 
 ## Offline
 
 ### Method
-To do. Diagram of the preprocessing done.
+For both ME and MI conditions, the following steps are applied on the raw data in order to remove 
+common artifacts and noise:
+- Re-referencing monopolar scalp-recorded-EEG signals using an average reference montage.
+- Removing the mastoid channels from the analysis.
+- Applying a band-pass filter between 2 Hz and 50 Hz and a notch filter on 60 Hz. Filters have to 
+be zero-phase (linear phase and delay compensation).
+- Rejection of eye blinking, eye movements, heartbeat and muscle artifacts with
+Independent Component Analysis (ICA) algorithm. Independent component labelling is automatically done using
+[MNE-ICALabel](https://github.com/mne-tools/mne-icalabel).
+- Automatic bad channel rejection (based on their correlations and amplitudes). 
+Reconstruction of the channels is done by spherical spline interpolation.
+- Epoching: Segmentation of the signal into consecutive Epochs of [-150ms; 5000ms] around each event-task.
+Baseline correction: Subtraction of the baseline average value is applied to all the epochs.
+- Finally bad epochs are automatically rejected using the adaptative threshold computed by [Autoreject](https://autoreject.github.io/stable/index.html).
 
 ### Classification scores
 
