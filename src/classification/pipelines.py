@@ -1,3 +1,5 @@
+"""
+"""
 import numpy as np
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -11,13 +13,24 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, GradientBoostingClassifier
 from sklearn.naive_bayes import GaussianNB, ComplementNB, MultinomialNB
 from sklearn.pipeline import Pipeline
-from sklearn.feature_selection import (VarianceThreshold, SelectKBest, SelectPercentile, GenericUnivariateSelect,
-                                       SelectFromModel)
+from sklearn.feature_selection import (
+    VarianceThreshold,
+    SelectKBest,
+    SelectPercentile,
+    GenericUnivariateSelect,
+    SelectFromModel,
+)
 from sklearn.model_selection import GridSearchCV
 from scikeras.wrappers import KerasClassifier
 from mne.decoding import CSP, Vectorizer, EMS, Scaler, SPoC, UnsupervisedSpatialFilter
 from mne.preprocessing import Xdawn
-from pyriemann.estimation import Covariances, ERPCovariances, XdawnCovariances, CospCovariances, HankelCovariances
+from pyriemann.estimation import (
+    Covariances,
+    ERPCovariances,
+    XdawnCovariances,
+    CospCovariances,
+    HankelCovariances,
+)
 from pyriemann.estimation import Coherences as CovCoherences
 from pyriemann.tangentspace import TangentSpace
 from pyriemann.channelselection import ElectrodeSelection
@@ -26,13 +39,19 @@ from pyriemann.classification import SVC as RSVC
 from pyriemann.classification import KNearestNeighbor as RKNN
 from pyriemann.spatialfilters import CSP as CovCSP
 from pyriemann.spatialfilters import SPoC as CovSPoC
-from sklearn.metrics import accuracy_score, precision_score, roc_auc_score, cohen_kappa_score, f1_score, recall_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    roc_auc_score,
+    cohen_kappa_score,
+    f1_score,
+    recall_score,
+)
 from sklearn.base import BaseEstimator, TransformerMixin
 from src.classification.nn_models import *  # Precise the models used
 
 
 class AddNewDim(TransformerMixin):
-
     def fit(self, X, y=None):  # native fit method take 3 positional arguments
         return self
 
@@ -41,7 +60,6 @@ class AddNewDim(TransformerMixin):
 
 
 class StandardScaler3D(TransformerMixin):
-
     def fit(self, X, y=None):  # native fit method take 3 positional arguments
         return self
 
@@ -70,12 +88,12 @@ class StandardScaler3D(TransformerMixin):
 
 # Score dict
 _all_score_dict = {
-    'accuracy': accuracy_score,
-    'f1': f1_score,
-    'recall': recall_score,
-    'precision': precision_score,
-    'roc_auc': roc_auc_score,
-    'kappa': cohen_kappa_score
+    "accuracy": accuracy_score,
+    "f1": f1_score,
+    "recall": recall_score,
+    "precision": precision_score,
+    "roc_auc": roc_auc_score,
+    "kappa": cohen_kappa_score,
 }
 
 
@@ -142,100 +160,168 @@ def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
         "Vect": Vectorizer(),
         "addnewdim": AddNewDim(),
         # "EmotivMap": EmotivCoverageMapper(),
-
         # Feature Scaler
         "stdScale": StandardScaler(),
         "stdScale3d": StandardScaler3D(),
         "minmaxScale": MinMaxScaler(feature_range=(0, 1)),
         "ChanStd": Scaler(scalings="mean", with_mean=True, with_std=True),
-
         # Spatial filter
         "CSP": CSP(n_components=4, reg=None),
         "Xdawn": Xdawn(n_components=2),
         "SPoC": SPoC(n_components=4, reg=None),
         "EMS": EMS(),
-
         # Feature extraction & selection
         "PCA": PCA(n_components=None),
         "PCA3d": UnsupervisedSpatialFilter(PCA(n_components=None)),
         "VarTresh": VarianceThreshold(threshold=0),
         "SelectKbest": SelectKBest(k=10),
         "SelectPercent": SelectPercentile(percentile=10),
-        "GenUnivSelect": GenericUnivariateSelect(mode='percentile', param=1e-05),
+        "GenUnivSelect": GenericUnivariateSelect(mode="percentile", param=1e-05),
         "SelectFromModel": SelectFromModel(LinearSVC(penalty="l1"), threshold=None),
-
         # sklearn classifiers
         "KNN": KNeighborsClassifier(n_neighbors=5),
-        "SVC": SVC(C=1.0, kernel='rbf', gamma='scale'),
-        "LinSVC": LinearSVC(penalty='l2', C=1.0, max_iter=1000),
-        "LR": LogisticRegression(penalty='l2', C=1.0,  solver='lbfgs', max_iter=100),
-        "LDA": LinearDiscriminantAnalysis(solver='svd', shrinkage=None),
+        "SVC": SVC(C=1.0, kernel="rbf", gamma="scale"),
+        "LinSVC": LinearSVC(penalty="l2", C=1.0, max_iter=1000),
+        "LR": LogisticRegression(penalty="l2", C=1.0, solver="lbfgs", max_iter=100),
+        "LDA": LinearDiscriminantAnalysis(solver="svd", shrinkage=None),
         "QDA": QuadraticDiscriminantAnalysis(reg_param=0.0),
-        "GPC": GaussianProcessClassifier(kernel=None, max_iter_predict=100, multi_class='one_vs_rest'),
-
-        # Classifiers on covariance matrices using a Riemannian-based kernel
-        ## Transformers
-        "Cov": Covariances(estimator='scm'),
-        "erpCov": ERPCovariances(estimator='scm'),
-        "xdawnCov": XdawnCovariances(nfilter=4, applyfilters=True, estimator='scm', xdawn_estimator='scm'),
-        "TS": TangentSpace(metric='riemann'),
-        "CovCSP": CovCSP(nfilter=4, metric='euclid', log=True),
+        "GPC": GaussianProcessClassifier(
+            kernel=None, max_iter_predict=100, multi_class="one_vs_rest"
+        ),
+        # == Classifiers on covariance matrices using a Riemannian-based kernel ==
+        # Transformers
+        "Cov": Covariances(estimator="scm"),
+        "erpCov": ERPCovariances(estimator="scm"),
+        "xdawnCov": XdawnCovariances(
+            nfilter=4, applyfilters=True, estimator="scm", xdawn_estimator="scm"
+        ),
+        "TS": TangentSpace(metric="riemann"),
+        "CovCSP": CovCSP(nfilter=4, metric="euclid", log=True),
         "CospCSP": CospCovariances(window=128, overlap=0.75, fmin=None, fmax=None, fs=None),
-        "CovCoh": CovCoherences(window=128, overlap=0.75, fmin=None, fmax=None, fs=None, coh='ordinary'),
-        "CovSPoC": CovSPoC(nfilter=4, metric='euclid', log=True),
-        "HankCov": HankelCovariances(delays=4, estimator='scm'),
-        "ChanSelect": ElectrodeSelection(nelec=16, metric='riemann'),
-        ## Classifiers
-        "MDM": MDM(metric=dict(mean='riemann', distance='riemann')),
-        "FgMDM": FgMDM(metric=dict(mean='riemann', distance='riemann')),
-        "CovSVC": RSVC(metric='riemann', C=1.0, shrinking=True),
-        "CovKNN": RKNN(n_neighbors=5, metric=dict(mean='riemann', distance='riemann')),
-        "MDMF": MeanField(method_label='sum_means', metric=dict(mean='riemann', distance='riemann')),
-
-        # Decision Tree
+        "CovCoh": CovCoherences(
+            window=128, overlap=0.75, fmin=None, fmax=None, fs=None, coh="ordinary"
+        ),
+        "CovSPoC": CovSPoC(nfilter=4, metric="euclid", log=True),
+        "HankCov": HankelCovariances(delays=4, estimator="scm"),
+        "ChanSelect": ElectrodeSelection(nelec=16, metric="riemann"),
+        # Classifiers
+        "MDM": MDM(metric=dict(mean="riemann", distance="riemann")),
+        "FgMDM": FgMDM(metric=dict(mean="riemann", distance="riemann")),
+        "CovSVC": RSVC(metric="riemann", C=1.0, shrinking=True),
+        "CovKNN": RKNN(n_neighbors=5, metric=dict(mean="riemann", distance="riemann")),
+        "MDMF": MeanField(
+            method_label="sum_means", metric=dict(mean="riemann", distance="riemann")
+        ),
+        # == Decision Tree ==
         "DTC": DecisionTreeClassifier(max_depth=None),
-        "RF": RandomForestClassifier(n_estimators=100, max_depth=5, max_features='sqrt'),
-        "GBDT": GradientBoostingClassifier(learning_rate=0.1, max_depth=3, min_samples_leaf=1, min_samples_split=2,
-                                           n_estimators=100),
-
-        # Naive Bayes
+        "RF": RandomForestClassifier(n_estimators=100, max_depth=5, max_features="sqrt"),
+        "GBDT": GradientBoostingClassifier(
+            learning_rate=0.1,
+            max_depth=3,
+            min_samples_leaf=1,
+            min_samples_split=2,
+            n_estimators=100,
+        ),
+        # == Naive Bayes ==
         "GaussNB": GaussianNB(),
         "CompNB": ComplementNB(alpha=1.0),
         "MultiNB": MultinomialNB(alpha=1.0),
-
-        # Neural Networks
-        "Perceptron": Perceptron(penalty=None, alpha=0.0001, l1_ratio=0.15, max_iter=1000, n_iter_no_change=5,
-                                 class_weight=None),
-        "MLP": MLPClassifier(hidden_layer_sizes=(100,), activation='relu',  solver='adam', alpha=0.0001, max_iter=200),
-        "SGD": SGDClassifier(penalty='l2', alpha=0.0001, l1_ratio=0.15, max_iter=1000),
+        # == Neural Networks ==
+        "Perceptron": Perceptron(
+            penalty=None,
+            alpha=0.0001,
+            l1_ratio=0.15,
+            max_iter=1000,
+            n_iter_no_change=5,
+            class_weight=None,
+        ),
+        "MLP": MLPClassifier(
+            hidden_layer_sizes=(100,), activation="relu", solver="adam", alpha=0.0001, max_iter=200
+        ),
+        "SGD": SGDClassifier(penalty="l2", alpha=0.0001, l1_ratio=0.15, max_iter=1000),
         "NN": KerasClassifier(
-            model=shallow_NN, num_chans=num_chans, num_features=num_features, num_hidden=16, activation='relu',
-            learning_rate=learning_rate, epochs=nbr_epochs,
-            batch_size=batch_size, verbose=False),
+            model=shallow_NN,
+            num_chans=num_chans,
+            num_features=num_features,
+            num_hidden=16,
+            activation="relu",
+            learning_rate=learning_rate,
+            epochs=nbr_epochs,
+            batch_size=batch_size,
+            verbose=False,
+        ),
         "NN2": KerasClassifier(
-            model=shallow_NN2, num_chans=num_chans, num_features=num_features*14, num_hidden=16, activation='relu',
-            learning_rate=learning_rate, epochs=nbr_epochs,
-            batch_size=batch_size, verbose=False),
+            model=shallow_NN2,
+            num_chans=num_chans,
+            num_features=num_features * 14,
+            num_hidden=16,
+            activation="relu",
+            learning_rate=learning_rate,
+            epochs=nbr_epochs,
+            batch_size=batch_size,
+            verbose=False,
+        ),
         "DNN_2l": KerasClassifier(
-            model=DNNa_2l, num_chans=num_chans, num_features=num_features, num_hidden=60, activation='relu',
-            learning_rate=learning_rate, epochs=nbr_epochs, batch_size=batch_size, verbose=False),
+            model=DNNa_2l,
+            num_chans=num_chans,
+            num_features=num_features,
+            num_hidden=60,
+            activation="relu",
+            learning_rate=learning_rate,
+            epochs=nbr_epochs,
+            batch_size=batch_size,
+            verbose=False,
+        ),
         "SCNNa": KerasClassifier(
-            model=SCNNa, num_chans=num_chans, num_features=num_features, learning_rate=learning_rate, filters=30,
-            epochs=nbr_epochs, batch_size=batch_size, verbose=False),
+            model=SCNNa,
+            num_chans=num_chans,
+            num_features=num_features,
+            learning_rate=learning_rate,
+            filters=30,
+            epochs=nbr_epochs,
+            batch_size=batch_size,
+            verbose=False,
+        ),
         "SCNNb": KerasClassifier(
-            model=SCNNb, num_chans=num_chans, num_features=num_features, learning_rate=learning_rate, filters=40,
-            kernel_size=13, pool_size=75, strides=15, epochs=nbr_epochs, batch_size=batch_size, verbose=False),
+            model=SCNNb,
+            num_chans=num_chans,
+            num_features=num_features,
+            learning_rate=learning_rate,
+            filters=40,
+            kernel_size=13,
+            pool_size=75,
+            strides=15,
+            epochs=nbr_epochs,
+            batch_size=batch_size,
+            verbose=False,
+        ),
         "EEGNET": KerasClassifier(
-            model=eegnet, Chans=num_chans, Samples=num_features, dropoutRate=dropout_rate, learning_rate=learning_rate,
-            epochs=nbr_epochs, batch_size=batch_size, verbose=False),
+            model=eegnet,
+            Chans=num_chans,
+            Samples=num_features,
+            dropoutRate=dropout_rate,
+            learning_rate=learning_rate,
+            epochs=nbr_epochs,
+            batch_size=batch_size,
+            verbose=False,
+        ),
         "custEEGNET": KerasClassifier(
-            model=custom_eegnet, num_chans=num_chans, num_features=num_features, sampling_rate=sampling_rate,
-            dropout_rate=dropout_rate, F1=8, D=2, learning_rate=learning_rate, epochs=nbr_epochs, batch_size=batch_size,
-            verbose=False),
-
-        # Ensemble methods
-        "adaB": AdaBoostClassifier(estimator=None, n_estimators=50, learning_rate=1.0, algorithm='SAMME.R'),
-
+            model=custom_eegnet,
+            num_chans=num_chans,
+            num_features=num_features,
+            sampling_rate=sampling_rate,
+            dropout_rate=dropout_rate,
+            F1=8,
+            D=2,
+            learning_rate=learning_rate,
+            epochs=nbr_epochs,
+            batch_size=batch_size,
+            verbose=False,
+        ),
+        # == Ensemble methods ==
+        "adaB": AdaBoostClassifier(
+            estimator=None, n_estimators=50, learning_rate=1.0, algorithm="SAMME.R"
+        ),
     }
 
     pipeline_dict = {}
@@ -249,8 +335,10 @@ def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
                     steps.append((f"{estim_name}", estim_funct))
                     clf_found = True
                 if i == len(all_estimators.keys()) and not clf_found:
-                    raise ValueError(f"'{clf_name}' is not a valid estimator name. Valid estimator are :"
-                                     f"{all_estimators.keys()}")
+                    raise ValueError(
+                        f"'{clf_name}' is not a valid estimator name. Valid estimator are :"
+                        f"{all_estimators.keys()}"
+                    )
         constructed_pipeline = Pipeline(steps)
         constructed_pipeline.set_params(**clf_params)
         pipeline_dict[pipeline_prompt] = constructed_pipeline

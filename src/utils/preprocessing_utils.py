@@ -1,6 +1,9 @@
+"""
+"""
 import os
 import mne
 import csv
+from pathlib import Path
 import numpy as np
 import pickle
 import mne_icalabel
@@ -81,10 +84,7 @@ def get_cond_epochs(
     raw_eeg,
     events,
     event_id,
-    epoch_tmin=-1.5,
-    epoch_tmax=5,
-    baseline=(-1.5, 0),
-    basl_mode="mean",
+    epoch_time=(-1.5, 5),
     bad_trials=[],
 ):
     """
@@ -92,10 +92,7 @@ def get_cond_epochs(
     :param raw_eeg:
     :param events:
     :param event_id:
-    :param epoch_tmin:
-    :param epoch_tmax:
-    :param baseline:
-    :param basl_mode:
+    :param epoch_time:
     :param bad_trials:
     :return:
     """
@@ -103,16 +100,15 @@ def get_cond_epochs(
         raw_eeg,
         events,
         event_id=event_id,
-        tmin=epoch_tmin,
-        tmax=epoch_tmax,
-        baseline=None,
+        tmin=epoch_time[0],
+        tmax=epoch_time[1],
+        baseline=None,  # will apply baseline correction after
+        verbose=False,
     )
-    epochs_arr = mne.baseline.rescale(
-        epochs.get_data(), raw_eeg.times, baseline=baseline, mode=basl_mode, copy=True
-    )
-    epochs = mne.EpochsArray(epochs_arr, epochs.info, verbose=False)
-    idx_torem = np.array(bad_trials) - 1
-    epochs.drop(idx_torem)
+    if bad_trials:
+        idx_torem = np.array(bad_trials) - 1
+        epochs.drop(idx_torem)
+        print(f"dropped epochs corresponding to trials: {idx_torem}")
     return epochs
 
 
@@ -191,10 +187,10 @@ def annotate_by_markers(raw_eeg, subj, events_csv, me_event_id, mi_event_id):
     return raw_eeg.set_annotations(annot_from_events), events
 
 
-def perform_ica(raw_eeg, plot_topo=False, topo_saveas=None, return_sources=False, ic_min_var=0.01):
+def perform_ica(eeg_data, plot_topo=False, topo_saveas=None, return_sources=False, ic_min_var=0.01):
     """
     Perform Independent Component Analysis + automatically remove artifact with ICLabel
-    :param raw_eeg:
+    :param eeg_data:
     :param plot_topo:
     :param topo_saveas:
     :param return_sources:
@@ -203,8 +199,8 @@ def perform_ica(raw_eeg, plot_topo=False, topo_saveas=None, return_sources=False
     """
     nbr_ics = 15
     ica = mne.preprocessing.ICA(n_components=15, method="picard", max_iter="auto", random_state=97)
-    ica.fit(raw_eeg)
-    all_explained_var_ratio = ica.get_explained_variance_ratio(raw_eeg, ch_type="eeg")
+    ica.fit(eeg_data)
+    all_explained_var_ratio = ica.get_explained_variance_ratio(eeg_data, ch_type="eeg")
     print(
         f"Fraction of variance explained by all the {nbr_ics} components: "
         f"{round(100 * all_explained_var_ratio['eeg'], 3)}%"
@@ -222,10 +218,11 @@ def perform_ica(raw_eeg, plot_topo=False, topo_saveas=None, return_sources=False
             raise FileNotFoundError(f"{e}")
 
     # Check-up with mne find_bads_eog()
-    if "eog" in raw_eeg.get_channel_types():
+    eog_indices = []
+    if "eog" in eeg_data.get_channel_types():
         ica.exclude = []
         # find which ICs match the EOG pattern
-        eog_indices, eog_scores = ica.find_bads_eog(raw_eeg)
+        eog_indices, eog_scores = ica.find_bads_eog(eeg_data)
         # # eog_indices, eog_scores = ica.find_bads_eog(raw_eeg, ch_name='Fpz')
         # ica.exclude = eog_indices
 
@@ -239,10 +236,10 @@ def perform_ica(raw_eeg, plot_topo=False, topo_saveas=None, return_sources=False
         # ica.plot_sources(raw_eeg, show_scrollbars=False)
 
     # ICLabel classification of the IC components:
-    ic_labels = mne_icalabel.label_components(raw_eeg, ica, method="iclabel")
+    ic_labels = mne_icalabel.label_components(eeg_data, ica, method="iclabel")
     labels = ic_labels["labels"]
 
-    if "eog" in raw_eeg.get_channel_types() and (ica.labels_["eog"] != eog_indices):
+    if "eog" in eeg_data.get_channel_types() and (ica.labels_["eog"] != eog_indices):
         raise ValueError("EOG ICs found by ICLabel and 'find_bads_eog' are different")
 
     exclude_dict = {}
@@ -261,7 +258,7 @@ def perform_ica(raw_eeg, plot_topo=False, topo_saveas=None, return_sources=False
     for i, ic in enumerate(ic_labels["labels"]):
         if i not in exclude_dict.keys():
             explained_var_ratio = ica.get_explained_variance_ratio(
-                raw_eeg, components=[i], ch_type="eeg"
+                eeg_data, components=[i], ch_type="eeg"
             )
             if explained_var_ratio["eeg"] < ic_min_var:
                 minor_brain_ics.append(i)
@@ -273,9 +270,9 @@ def perform_ica(raw_eeg, plot_topo=False, topo_saveas=None, return_sources=False
     # ica.plot_properties(raw_eeg, picks=kept_ics, verbose=False)
     if return_sources:
         ica.exclude.extend(minor_brain_ics)  # only keep the main sources to work on them
-        return ica.get_sources(raw_eeg)
+        return ica.get_sources(eeg_data)
     else:
-        return ica.apply(raw_eeg, exclude=list(exclude_dict.keys()))
+        return ica.apply(eeg_data, exclude=list(exclude_dict.keys()))
 
 
 def offline_preprocess(
@@ -284,56 +281,36 @@ def offline_preprocess(
     data_repo="../data",
     l_freq=2,
     h_freq=50,
-    baseline_time=(-1.5, 0),
-    basl_mode="mean",
+    epoch_time=(-1.5, 0),
     doICA="after_epoching",
     work_on_sources=False,
     bad_trials=get_reported_bad_trials(),
-    save_prepro=True,
+    save_prepro_repo="../data/preprocessed",
 ):
     """
     Apply preprocessing on the raw eeg data extracted from the .fif files for each subject and
-    experiments.
+    experiments. If save_prepro=True, save the preprocessed files with pickle and the evoked
+    erp/topomaps png picture.
     :param subject:
     :param experiment:
     :param data_repo:
     :param l_freq:
     :param h_freq:
-    :param baseline_time:
-    :param basl_mode:
+    :param epoch_time:
     :param doICA:
     :param work_on_sources:
     :param bad_trials:
-    :param save_prepro:
+    :param save_prepro_repo:
     :return: epochs:
     """
-    session_bad_trials = []
     file = f"{data_repo}/{subject}_{experiment}/{subject}_{experiment}.fif"
     events_csv = f"{data_repo}/{subject}_{experiment}/{subject}_{experiment}.events.csv"
     me_event_id, mi_event_id = get_cond_id(experiment)
-    baseline = baseline_time
+    cond_dict = {me_event_id: "me", mi_event_id: "mi"}
     raw_eeg = mne.io.read_raw_fif(file)
     raw_eeg.resample(sfreq=512)
     raw_eeg.load_data()  # need to load data to rereference etc
     # raw_eeg.plot()
-    if save_prepro:
-        if work_on_sources:
-            prepro_repo = f"{data_repo}/preprocessed/ics_sources/"
-            prefix = "sources"
-        else:
-            prepro_repo = f"{data_repo}/preprocessed/"
-            prefix = "prepro"
-        data_prepro_path = (
-            f"{prepro_repo}{prefix}_{subject}_{experiment}_filt({l_freq}_{h_freq})_"
-            f"basl{baseline}{basl_mode}_ICA{doICA}.pkl"
-        )
-        topo_path = (
-            f"{prepro_repo}{prefix}_topo_{subject}_{experiment}_filt({l_freq}_{h_freq})_"
-            f"basl{baseline}{basl_mode}_ICA{doICA}.png"
-        )
-    else:
-        data_prepro_path = None
-        topo_path = None
 
     # Set channel types
     mapping_type = map_chan_type(raw_eeg)
@@ -351,87 +328,81 @@ def offline_preprocess(
     nc.find_bad_by_correlation(correlation_threshold=0.2)
     nc.find_bad_by_deviation(deviation_threshold=6.0)
     print(nc.get_bads())
-
     if raw_eeg.info["bads"]:
         raw_eeg = raw_eeg.interpolate_bads(reset_bads=True)
 
     raw_eeg.set_eeg_reference(ref_channels="average", ch_type="auto")
 
     if doICA == "before_epoching":
-        if work_on_sources:
-            raw_eeg = perform_ica(
-                raw_eeg,
-                plot_topo=False,
-                topo_saveas=topo_path,
-                return_sources=True,
-            )
-        else:
-            raw_eeg = perform_ica(raw_eeg, plot_topo=False)
-    elif doICA == "after_epoching":
-        baseline = None  # Baseline correction will be applied after ICA
+        raw_eeg = perform_ica(raw_eeg, return_sources=work_on_sources)
 
     # Annotate according to events.csv markers time stamps
     raw_eeg, events = annotate_by_markers(raw_eeg, subject, events_csv, me_event_id, mi_event_id)
 
     # Make epochs of 5 seconds for the paradigm motor execution (me) and motor imagery (mi)
-    session_bad_trials.extend(
-        bad_trials[f"{subject}_{experiment}"]["me"] + bad_trials[f"{subject}_{experiment}"]["mi"]
-    )
     for event_id in [me_event_id, mi_event_id]:
-        list_bad_trials = session_bad_trials[event_id]
+        list_bad_trials = bad_trials[f"{subject}_{experiment}"][cond_dict[event_id]]
         epochs = get_cond_epochs(
             raw_eeg,
             events,
             event_id,
-            epoch_tmin=-1.5,
-            epoch_tmax=5,
-            baseline=baseline,
-            basl_mode=basl_mode,
+            epoch_time=epoch_time,
             bad_trials=list_bad_trials,
         )
-        if doICA != "after_epoching":
-            # Reject bad epochs using Autoreject
-            reject_dict = get_rejection_threshold(epochs, decim=1)
-            epochs.drop_bad(reject=reject_dict)
         epochs.load_data()
-        if save_prepro:
-            epoch_prepro_path = (
-                f"{data_prepro_path.split(f'{experiment}')[0]}{experiment}"
-                f"{data_prepro_path.split(f'{experiment}')[1]}"
+        if doICA == "after_epoching":
+            topo_path = None
+            if save_prepro_repo and work_on_sources:
+                try:
+                    Path(f"{save_prepro_repo}/ics_sources/").mkdir(parents=True, exist_ok=True)
+                except FileExistsError:
+                    pass
+                topo_path = (
+                    f"{save_prepro_repo}/ics_sources/sources_topo_{subject}_{experiment}_"
+                    f"{cond_dict[event_id]}_filt({l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_"
+                    f"ICA{doICA}.png"
+                )
+            epochs = perform_ica(epochs, return_sources=work_on_sources, topo_saveas=topo_path)
+        # Baseline removal
+        epochs.apply_baseline()
+        # Automatic epoch rejection using Autoreject
+        reject_dict = get_rejection_threshold(epochs, decim=1)
+        epochs.drop_bad(reject=reject_dict)
+
+        if save_prepro_repo:
+            prefix = "prepro"
+            prepro_repo = save_prepro_repo
+            if work_on_sources:
+                prepro_repo = f"{save_prepro_repo}/ics_sources/"
+                prefix = "sources"
+            try:
+                Path(f"{prepro_repo}").mkdir(parents=True, exist_ok=True)
+            except FileExistsError:
+                pass
+            prepro_file_path = (
+                f"{prepro_repo}{prefix}_{subject}_{experiment}_{cond_dict[event_id]}_filt("
+                f"{l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.pkl"
+            )
+            erptopo_path = (
+                f"{prepro_repo}{prefix}_{subject}_{experiment}_{cond_dict[event_id]}_filt("
+                f"{l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.png"
             )
             topo_path = (
-                f"{topo_path.split(f'{experiment}')[0]}{experiment}"
-                f"{topo_path.split(f'{experiment}')[1]}"
+                f"{prepro_repo}{prefix}_topo_{subject}_{experiment}_{cond_dict[event_id]}_filt"
+                f"({l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.png"
             )
-        else:
-            epoch_prepro_path = None
+            if not work_on_sources:
+                evoked = epochs.average()
+                erptopo_fig = evoked.plot_joint(
+                    title=f"Subj:{subject} Exp:{experiment} Cond:" f"{cond_dict[event_id]}",
+                    ts_args={"gfp": True}, show=False)
+                erptopo_fig.savefig(erptopo_path, format="png", bbox_inches="tight")
+                times = np.arange(0, evoked.tmax, 0.1)
+                topo_fig = evoked.plot_topomap(times=times, average=0.050, ncols="auto",
+                                               nrows="auto", show=False)
+                topo_fig.savefig(topo_path, format="png", bbox_inches="tight")
+            with open(prepro_file_path, "wb") as f:
+                pickle.dump(epochs, f)
+            print(f"file {prepro_file_path} along its evoked erp saved")
 
-        if doICA == "after_epoching":
-            if work_on_sources:
-                epochs = perform_ica(
-                    epochs,
-                    plot_topo=False,
-                    topo_saveas=topo_path,
-                    return_sources=True,
-                )
-            else:
-                epochs = perform_ica(epochs, plot_topo=False)
-            # Once ICA applied, remove the baseline and reject bad epochs using Autoreject
-            baseline = baseline_time
-            # epochs.apply_baseline(baseline)
-            epochs_arr = mne.baseline.rescale(
-                epochs.get_data(),
-                raw_eeg.times,
-                baseline=baseline,
-                mode=basl_mode,
-                copy=True,
-            )
-            epochs = mne.EpochsArray(epochs_arr, epochs.info, verbose=False)
-            reject_dict = get_rejection_threshold(epochs, decim=1)
-            epochs.drop_bad(reject=reject_dict)
-
-        if save_prepro:
-            with open(epoch_prepro_path, "wb") as f1:
-                pickle.dump(epochs, f1)
-                print(f"file {epoch_prepro_path} saved")
-        return epochs
+    return epochs

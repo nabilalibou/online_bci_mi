@@ -42,8 +42,8 @@ For both ME and MI conditions, the following steps are applied on the raw data i
 common artifacts and noise:
 - Re-referencing monopolar scalp-recorded-EEG signals using an average reference montage.
 - Removing the mastoid channels from the analysis.
-- Applying a band-pass filter between 2 Hz and 50 Hz and a notch filter on 60 Hz. Filters have to 
-be zero-phase (linear phase and delay compensation).
+- Applying a band-pass filter between 2 Hz and 50 Hz. Filters have to be zero-phase (linear phase 
+and delay compensation).
 - Rejection of eye blinking, eye movements, heartbeat and muscle artifacts with
 Independent Component Analysis (ICA) algorithm. Independent component labelling is automatically done using
 [MNE-ICALabel](https://github.com/mne-tools/mne-icalabel).
