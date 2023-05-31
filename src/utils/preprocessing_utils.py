@@ -19,6 +19,28 @@ plt.switch_backend("Qt5Agg")
 mne.viz.set_browser_backend("qt")
 
 
+def cut_into_windows(X, y, windows_size):
+    if windows_size > 1:
+        if not X.shape[2] % windows_size == 0:
+            raise ValueError(f"'{X.shape[2]}' not divisible by slide_windows_size value :'{windows_size}'")
+        # X = np.reshape(X, (slide_windows_size*X.shape[0], X.shape[1], -1))
+        X_segm = np.zeros((windows_size*X.shape[0], X.shape[1], int(X.shape[2] / windows_size)))
+        for i in range(X.shape[0]):
+            for m in range(windows_size):
+                k1 = m * int(X.shape[2] / windows_size)
+                k2 = (m+1) * int(X.shape[2] / windows_size)
+                X_segm[i*windows_size + m, :, :] = X[i, :, k1:k2]
+        X = X_segm
+        y = []
+        for i in range(0, len(y)):
+            j = 0
+            while j < windows_size:
+                y.append(y[i])
+                j += 1
+        y = np.squeeze(y)
+    return X, y
+
+
 def get_cond_id(exp):
     """
     Return the id corresponding to each condition
@@ -282,6 +304,7 @@ def offline_preprocess(
     l_freq=2,
     h_freq=50,
     epoch_time=(-1.5, 0),
+    sfreq=512,
     doICA="after_epoching",
     work_on_sources=False,
     bad_trials=get_reported_bad_trials(),
@@ -308,7 +331,7 @@ def offline_preprocess(
     me_event_id, mi_event_id = get_cond_id(experiment)
     cond_dict = {me_event_id: "me", mi_event_id: "mi"}
     raw_eeg = mne.io.read_raw_fif(file)
-    raw_eeg.resample(sfreq=512)
+    raw_eeg.resample(sfreq=sfreq)
     raw_eeg.load_data()  # need to load data to rereference etc
     # raw_eeg.plot()
 
