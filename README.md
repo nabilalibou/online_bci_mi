@@ -14,7 +14,14 @@ The first part is an offline study of the recorded EEG signals in order to test 
 and various classification strategies.
 The second part is to perform online analysis and decoding using [MNE-realtime](https://github.com/mne-tools/mne-realtime).
 
-## Experimental setup
+# Installation
+
+```
+git clone https://github.com/nabilalibou/online_bci_mi.git
+pip install -r requirements.txt
+```
+
+# Experimental setup
 The study included two right-handed participant (me and my colleague). 
 During the experiments, the subject sat on a comfortable chair with his arms and legs relaxed. Each 
 recording session lasted for about an hour and was divided into: an initial short rest time with eyes 
@@ -40,6 +47,7 @@ frequency. The electrode montage was in  accordance with the standard 5% 10/20 S
 ## Offline
 
 ### Method
+#### Preprocessing
 For both ME and MI conditions, the following steps are applied on the raw data in order to remove 
 common artifacts and noise:
 - Re-referencing monopolar scalp-recorded-EEG signals using an average reference montage.
@@ -54,6 +62,10 @@ Reconstruction of the channels is done by spherical spline interpolation.
 - Epoching: Segmentation of the signal into consecutive Epochs of [-150ms; 5000ms] around each event-task.
 Baseline correction: Subtraction of the baseline average value is applied to all the epochs.
 - Finally bad epochs are automatically rejected using the adaptative threshold computed by [Autoreject](https://autoreject.github.io/stable/index.html).
+
+#### Feature extraction
+
+#### Classifiers
 
 ### Classification scores
 
