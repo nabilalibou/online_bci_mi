@@ -125,6 +125,8 @@ def _return_clf_dict(clf_selection, all_clf_dict):
 
 def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
     """
+    Key insensitive dictionary of different Estimators and Transformers objects to construct sklearn pipelines.
+
     For clf in clf_selection: if in big dict{"name": callable} <= need defaut values for kerasclassifier to be
     instantiated no ? how to give params easily. agnostic to maj.
 
@@ -167,7 +169,7 @@ def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
         "ChanStd": Scaler(scalings="mean", with_mean=True, with_std=True),
         # Spatial filter
         "CSP": CSP(n_components=4, reg=None),
-        "Xdawn": Xdawn(n_components=2),
+        "Xdawn": Xdawn(n_components=2),  # improve SNR in ERP
         "SPoC": SPoC(n_components=4, reg=None),
         "EMS": EMS(),
         # Feature extraction & selection
@@ -326,7 +328,7 @@ def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
 
     pipeline_dict = {}
     for pipeline_prompt in clf_selection:
-        pipeline_name_list = pipeline_prompt.split("+")
+        pipeline_name_list = [x.strip(" ") for x in pipeline_prompt.split("+")]
         steps = []
         for clf_name in pipeline_name_list:
             clf_found = False
@@ -334,7 +336,7 @@ def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
                 if clf_name.lower() == estim_name.lower():
                     steps.append((f"{estim_name}", estim_funct))
                     clf_found = True
-                if i == len(all_estimators.keys()) and not clf_found:
+                if i == len(all_estimators.keys()) - 1 and not clf_found:
                     raise ValueError(
                         f"'{clf_name}' is not a valid estimator name. Valid estimator are :"
                         f"{all_estimators.keys()}"

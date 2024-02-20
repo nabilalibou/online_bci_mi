@@ -1,5 +1,3 @@
-
-
 def add_prefix_to_list(list_str, prefix):
     return list(map(lambda x: prefix + x, list_str))
 

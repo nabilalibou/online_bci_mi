@@ -8,28 +8,57 @@ import numpy as np
 import pickle
 import mne_icalabel
 from pyprep import NoisyChannels
+from scipy.signal import butter, lfilter
 from autoreject import get_rejection_threshold, read_reject_log
 import matplotlib
 import matplotlib.pyplot as plt
 
-matplotlib.use("Qt5Agg")
+# matplotlib.use("Qt5Agg")
 # matplotlib.use('TkAgg')
 # print(plt.get_backend())
-plt.switch_backend("Qt5Agg")
+# plt.switch_backend("Qt5Agg")
 mne.viz.set_browser_backend("qt")
+
+
+# Butterworth Bandpass Filter
+# Source: https://scipy-cookbook.readthedocs.io/items/ButterworthBandpass.html
+def butter_bandpass(lowcut, highcut, fs, order):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype="band")
+    return b, a
+
+
+def butter_bandpass_filter(signal, lowcut, highcut, fs, order=5):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+    if len(signal.shape) == 2:
+        n_chans, n_time = signal.shape
+        n_trials = 1
+    elif len(signal.shape) == 3:
+        n_trials, n_chans, n_time = signal.shape
+    else:
+        raise ValueError("Wrong input signal shape. Need to be 2D or 3D")
+    filtered = np.zeros(signal.shape)
+    for j in range(n_trials):
+        for i in range(n_chans):
+            filtered[i] = lfilter(b, a, signal[i])
+    return filtered
 
 
 def cut_into_windows(X, y, windows_size):
     if windows_size > 1:
         if not X.shape[2] % windows_size == 0:
-            raise ValueError(f"'{X.shape[2]}' not divisible by slide_windows_size value :'{windows_size}'")
+            raise ValueError(
+                f"'{X.shape[2]}' not divisible by slide_windows_size value :'{windows_size}'"
+            )
         # X = np.reshape(X, (slide_windows_size*X.shape[0], X.shape[1], -1))
-        X_segm = np.zeros((windows_size*X.shape[0], X.shape[1], int(X.shape[2] / windows_size)))
+        X_segm = np.zeros((windows_size * X.shape[0], X.shape[1], int(X.shape[2] / windows_size)))
         for i in range(X.shape[0]):
             for m in range(windows_size):
                 k1 = m * int(X.shape[2] / windows_size)
-                k2 = (m+1) * int(X.shape[2] / windows_size)
-                X_segm[i*windows_size + m, :, :] = X[i, :, k1:k2]
+                k2 = (m + 1) * int(X.shape[2] / windows_size)
+                X_segm[i * windows_size + m, :, :] = X[i, :, k1:k2]
         X = X_segm
         y = []
         for i in range(0, len(y)):
@@ -418,11 +447,14 @@ def offline_preprocess(
                 evoked = epochs.average()
                 erptopo_fig = evoked.plot_joint(
                     title=f"Subj:{subject} Exp:{experiment} Cond:" f"{cond_dict[event_id]}",
-                    ts_args={"gfp": True}, show=False)
+                    ts_args={"gfp": True},
+                    show=False,
+                )
                 erptopo_fig.savefig(erptopo_path, format="png", bbox_inches="tight")
                 times = np.arange(0, evoked.tmax, 0.1)
-                topo_fig = evoked.plot_topomap(times=times, average=0.050, ncols="auto",
-                                               nrows="auto", show=False)
+                topo_fig = evoked.plot_topomap(
+                    times=times, average=0.050, ncols="auto", nrows="auto", show=False
+                )
                 topo_fig.savefig(topo_path, format="png", bbox_inches="tight")
             with open(prepro_file_path, "wb") as f:
                 pickle.dump(epochs, f)
