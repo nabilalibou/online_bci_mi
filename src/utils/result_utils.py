@@ -64,17 +64,8 @@ def get_optimal_col_len(df, col, extra_space):
         col_name_len.append(len(series.name[level]))
         if level:  # after the 1st level, check the multiindex levels
             df.sort_index(axis=1, inplace=True)  # sort the columns or else PerformanceWarning
-            # Get unique columns at this level num_lev
-
-            # aaa = df.iloc
-            # a = df[col[:level]]
-            # level_indexes = df.iloc[:, df.columns.get_level_values(0) == level_name]
-            # level_indexes = df[col[:level]].columns.get_level_values(0)
             level_indexes = df.iloc[:level].columns.get_level_values(0)
-
             list_level_indexes = list(level_indexes.unique())
-            # list_level_indexes = list(level_indexes.nunique())
-            # Get column number at this level num_lev
             nb_level_indexes.append(len(list_level_indexes))
             # Get theoretical (with extra spaces) length of all columns at this level num_lev
             tot_extra_space_len = extra_space * nb_level_indexes[level - 1]
@@ -82,7 +73,7 @@ def get_optimal_col_len(df, col, extra_space):
 
             # Set cell's maximum adapted length for column col names
             if tot_len_level[-1] >= col_name_len[-2] + extra_space:
-                len_longest_col_name = col_name_len[-1]
+                len_longest_col_name = max(col_name_len)
             elif tot_len_level[-1] < col_name_len[-2] + extra_space:
                 len_longest_col_name = (
                     col_name_len[-1] + col_name_len[-2] + extra_space - tot_len_level[-1]
@@ -211,6 +202,7 @@ def auto_adjust_excel_col(df, writer, extra_space=3):
         worksheet.set_column(idx, idx, max_len)  # set column width
 
     # Columns cells length adaptation
+    len_longest_col_name = 0
     for idx, col in enumerate(df):  # loop through all columns
         series = df[col]
         if isinstance(series, pd.DataFrame):
@@ -288,8 +280,6 @@ def save_excel(df, filename, extra_space=3):
         )
         worksheet.set_column(idx + df.index.nlevels, idx + df.index.nlevels, max_len + extra_space)
     writer.close()
-    print("ee")
-
 
 #   except Exception as e:
 #       writer.close()

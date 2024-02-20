@@ -46,7 +46,7 @@ def get_df_results_avg(df):
                 df_avg = df.T.groupby(level=level, sort=False).mean().T
                 df_with_avg = pd.concat(
                     [df_avg], axis=1, keys=[f"Avg_{df.columns.names[level]}"]
-                ).join(df_with_avg)  # concat so multiindex column are automaticaly put as first column
+                ).join(df_with_avg)  # concat so multiindex column are automatically put as first column
     df_with_avg.insert(0, "Avg_total", df_with_avg.pop("Avg_total"))  # make Avg_total the first column
 
     return df_with_avg.round(3)
