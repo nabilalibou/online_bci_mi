@@ -82,62 +82,6 @@ def get_optimal_col_len(df, col, extra_space):
     return len_longest_col_name
 
 
-def auto_adjust_excel_col(df, writer, extra_space=3):
-    """
-    Parameters
-    ----------
-    df : DATAFRAME
-        Results of classifications.
-    writer : STR
-        File path to writing.
-    extra_space : INT
-        Extra space to add on column/line length.
-
-    Returns
-    -------
-    None.
-
-    """
-    df.to_excel(writer)  # send df to writer
-    worksheet = writer.sheets["Sheet1"]  # pull worksheet object
-    if isinstance(df.index, pd.MultiIndex):
-        nlevels = df.index.nlevels
-    else:
-        nlevels = 1
-
-    # Index cells length adaptation
-    for idx in range(0, nlevels): # loop through all index levels
-        len_names = len(df.index.names[idx])
-        # Get max length between last index name and columns names
-        if idx == nlevels-1:
-            # len of the largest index or column name/header
-            len_names = max(len_names, max(len(str(name)) for name in df.columns.names))
-        max_len = max(
-            len_names,  # len of the largest index name
-            max(len(str(j)) for j in df.index.get_level_values(idx))  # len of the largest column name/header
-            ) + extra_space  # adding a little extra space
-        worksheet.set_column(idx, idx, max_len)  # set column width
-
-    # Columns cells length adaptation
-    len_longest_col_name = 0
-    for idx, col in enumerate(df):  # loop through all columns
-        series = df[col]
-        if isinstance(series, pd.DataFrame):
-            series = df.iloc[:, [idx]].squeeze()
-        # Get cell's maximum adapted length for column col names
-        if isinstance(series.name, tuple):
-            len_longest_col_name = get_optimal_col_len(df, col, extra_space)
-        elif isinstance(series.name, str):
-            len_longest_col_name = len(series.name)
-
-        max_len = max((
-            series.astype(str).map(len).max(),  # len of largest item
-            len_longest_col_name  # cell's maximum adapted length
-            )) + extra_space  # adding a little extra space
-        worksheet.set_column(idx + nlevels, idx + nlevels, max_len)  # set column width
-    writer.close()
-
-
 def save_excel(df, filename, extra_space=3):
     """Converts the DataFrame to an Excel file and taking multi-indexes into account. Excel cell length set to the size
     of the largest DataFrame column name.
@@ -155,52 +99,53 @@ def save_excel(df, filename, extra_space=3):
     df.to_excel(writer)
     worksheet = writer.sheets["Sheet1"]
     # Set index cell width to the widest index name and the column cell width to the widest column name
-    # try:
-    for idx in range(0, df.index.nlevels):
-        length = len(df.index.names[idx])
-        # Finds max name length in the level uniting the 'last' row names and the 'first' column names
-        if idx == df.index.nlevels - 1:
-            length = max(length, max(len(str(name)) for name in df.columns.names))
-        max_length = max(
-            length, max(len(str(row_label)) for row_label in df.index.get_level_values(idx))
-        )
-        worksheet.set_column(idx, idx, max_length + extra_space)
-    max_length = 0
-    for idx, col in enumerate(df):
-        if isinstance(df.columns, pd.MultiIndex):
-            for level in df.columns.levels:
-                length = max([len(str(el)) for el in level])
+    try:
+        if df.index.nlevels > 1:
+            for idx in range(0, df.index.nlevels):
+                length = len(df.index.names[idx])
+                # Finds max name length in the level uniting the 'last' row names and the 'first' column names
+                if idx == df.index.nlevels - 1:
+                    length = max(length, max(len(str(name)) for name in df.columns.names))
+                max_length = max(
+                    length, max(len(str(row_label)) for row_label in df.index.get_level_values(idx))
+                )
+                worksheet.set_column(idx, idx, max_length + extra_space)
+
+        max_length = 0
+        for idx, col in enumerate(df):
+            if isinstance(df.columns, pd.MultiIndex):
+                for level in df.columns.levels:
+                    length = max([len(str(el)) for el in level])
+                    if length > max_length:
+                        max_length = length
+            else:
+                length = len(str(col))
                 if length > max_length:
                     max_length = length
-        else:
-            length = len(str(col))
-            if length > max_length:
-                max_length = length
-        worksheet.set_column(
-            idx + df.index.nlevels, idx + df.index.nlevels, max_length + extra_space
-        )
-
-    for idx, col in enumerate(df):  # loop through all columns
-        series = df[col]
-        widest_col = None
-        if isinstance(series, pd.DataFrame):
-            series = df.iloc[:, [idx]].squeeze()
-        if isinstance(series.name, tuple):
-            widest_col = get_optimal_col_len(df, col, extra_space)
-        elif isinstance(series.name, str):
-            widest_col = len(series.name)
-        max_len = max(
-            (
-                series.astype(str).map(len).max(),  # len of largest item
-                widest_col,  # cell's maximum adapted length
+            worksheet.set_column(
+                idx + df.index.nlevels, idx + df.index.nlevels, max_length + extra_space
             )
-        )
-        worksheet.set_column(idx + df.index.nlevels, idx + df.index.nlevels, max_len + extra_space)
-    writer.close()
 
-#   except Exception as e:
-#       writer.close()
-#       raise Exception(f"{e}. Automatic column adjustment could not be applied to the resulting spreadsheet")
+        for idx, col in enumerate(df):  # loop through all columns
+            series = df[col]
+            widest_col = None
+            if isinstance(series, pd.DataFrame):
+                series = df.iloc[:, [idx]].squeeze()
+            if isinstance(series.name, tuple):
+                widest_col = get_optimal_col_len(df, col, extra_space)
+            elif isinstance(series.name, str):
+                widest_col = len(series.name)
+            max_len = max(
+                (
+                    series.astype(str).map(len).max(),  # len of largest item
+                    widest_col,  # cell's maximum adapted length
+                )
+            )
+            worksheet.set_column(idx + df.index.nlevels, idx + df.index.nlevels, max_len + extra_space)
+        writer.close()
+    except Exception as e:
+        writer.close()
+        raise Exception(f"{e}. Automatic column adjustment could not be applied to the resulting spreadsheet")
 
 
 def save_classif_report(df, report_path):
@@ -221,28 +166,4 @@ def save_classif_report(df, report_path):
     path = pathlib.Path(directory)
     path.mkdir(parents=True, exist_ok=True)  # recursively create the path
     save_excel(df, report_path)
-    print(f"Results successfully written in '{report_path}'")
-
-
-def write_excel(df, report_path):
-    """
-    :param df:
-    :param report_path:
-    :return:
-    """
-    if not report_path.endswith('.xlsx'):
-        report_path = f"{report_path}.xlsx"
-    if os.path.exists(report_path):
-        print("Report file already exists, the file will be saved under a name format: {report_path}_{datetime}")
-        date_time = f"_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-        report_path = date_time.join(os.path.splitext(report_path))
-    directory = os.path.dirname(report_path)
-    path = pathlib.Path(directory)
-    path.mkdir(parents=True, exist_ok=True)  # recursively create the path
-    writer = pd.ExcelWriter(report_path, engine='xlsxwriter')
-    try:
-        auto_adjust_excel_col(df, writer)
-    except Exception as e:
-        print(e)
-        writer.close()
     print(f"Results successfully written in '{report_path}'")

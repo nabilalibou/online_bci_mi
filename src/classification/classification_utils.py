@@ -99,4 +99,4 @@ def evaluate_conditions(X, y, X_eval, y_eval, clf_dict, nbr_runs=1):
         cnt_clf += 1
     vect_result /= nbr_runs
 
-    return vect_result.round(3)
+    return vect_result

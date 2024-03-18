@@ -13,7 +13,7 @@ from utils.preprocessing_utils import get_reported_bad_trials, offline_preproces
 from feature.extraction import get_features
 from classification.pipelines import return_scorer_dict, return_clf_dict
 from classification.classification_utils import evaluate, evaluate_conditions, get_df_results_avg
-from utils.result_utils import save_classif_report, write_excel
+from utils.result_utils import save_classif_report
 
 # matplotlib.use("Qt5Agg")
 # matplotlib.use('TkAgg')
@@ -201,7 +201,7 @@ if eval_mode == "intra":
             else:
                 array_result = vect_result
         col_names[0].append(subj_name)
-        vect_result_cond_sum /= n_splits
+        vect_result_cond_sum = (vect_result_cond_sum/n_splits).round(3)
         if len(array_result_tot):
             array_result_tot = np.hstack((array_result_tot, array_result))
         else:
@@ -225,8 +225,5 @@ if eval_mode == "intra":
     cond_df_results = pd.DataFrame(cond_array_result_tot, columns=cond_col_multiindex, index=clf_selection)
     cond_df_results_with_avg = get_df_results_avg(cond_df_results)
 
-    write_excel(df_results_with_avg, path_results)  # TODO
-    write_excel(cond_df_results_with_avg, f"{path_results}_cond")  # TODO
-
-    save_classif_report(df_results_with_avg, path_results)  # TODO
-    save_classif_report(cond_df_results_with_avg, path_results)  # TODO
+    save_classif_report(df_results_with_avg, path_results)
+    save_classif_report(cond_df_results_with_avg, f"{path_results}_cond")
