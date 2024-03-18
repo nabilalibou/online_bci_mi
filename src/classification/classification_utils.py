@@ -73,3 +73,30 @@ def evaluate(X, y, X_eval, y_eval, clf_dict, score_dict, nbr_runs=1):
     vect_result /= nbr_runs
 
     return vect_result.round(3).reshape((-1, 1))
+
+
+def evaluate_conditions(X, y, X_eval, y_eval, clf_dict, nbr_runs=1):
+    conditions = np.unique(y_eval)
+    vect_result = np.zeros((len(clf_dict.keys()), len(conditions)), dtype=np.float16)
+    cond_result = np.zeros((1, len(conditions)), dtype=np.float16)
+    cnt_clf = 0
+    for i, (clf_name, clf_value) in enumerate(clf_dict.items()):
+        print(f"=> Currently fitting Pipeline '{clf_name}'")
+        for run in range(0, nbr_runs):
+            X_, y_ = shuffle(X, y)
+            try:
+                clf_value.fit(X_, y_)
+            except Exception as e:
+                raise Exception(f"\nError when going through the pipeline '{clf_name}'. {e}")
+            y_pred = clf_value.predict(X_eval)
+            for j, cond in enumerate(list(conditions)):
+                mask = np.where(y_eval == cond)[0]
+                cond_result[:, j] = np.sum(y_pred[mask] == cond) / len(mask)
+            if not i:
+                vect_result = cond_result
+            else:
+                vect_result = np.vstack((vect_result, cond_result))
+        cnt_clf += 1
+    vect_result /= nbr_runs
+
+    return vect_result.round(3)

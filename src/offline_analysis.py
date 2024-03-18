@@ -6,13 +6,13 @@ import numpy as np
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, StratifiedShuffleSplit
 from sklearn.preprocessing import LabelBinarizer
 from utils.data_utils import add_prefix_to_list, add_suffix_to_list
 from utils.preprocessing_utils import get_reported_bad_trials, offline_preprocess
 from feature.extraction import get_features
 from classification.pipelines import return_scorer_dict, return_clf_dict
-from classification.classification_utils import evaluate, get_df_results_avg
+from classification.classification_utils import evaluate, evaluate_conditions, get_df_results_avg
 from utils.result_utils import save_classif_report, write_excel
 
 # matplotlib.use("Qt5Agg")
@@ -151,20 +151,25 @@ nn_defaut_params = dict(
 score_dict = return_scorer_dict(score_selection)
 clf_dict = return_clf_dict(clf_selection, nn_defaut_params)
 index_names = [clf_selection, score_selection]
-level_names = ["Subjects", "Conditions"]
+level_names = ["Subjects", "Folds"]
+cond_level_names = ["Subjects", "Conditions"]
 # avg_col_names = ["Avg_by_subj", "Avg_by_cond", "Avg_total"]
 
 if eval_mode == "intra":
     # Evaluation intra-subject
     print("========")
     col_names = [[], []]
+    cond_col_names = [[], []]
     array_result_tot = []
+    cond_array_result_tot = []
     for subj_num, (subj_name, subj_data) in enumerate(data_dict.items()):
         # col_names[1] = []
-        kf = KFold(n_splits=n_splits, shuffle=True)
+        # kf = KFold(n_splits=n_splits, shuffle=True)
+        kf = StratifiedShuffleSplit(n_splits=n_splits)
         col_names[1] = [str(i+1) for i in range(n_splits)]
         array_result = []
         vect_result_sum = 0
+        vect_result_cond_sum = None
         X, Y = None, None
         for cond_num, (cond_name, data) in enumerate(subj_data.items()):
             if not cond_num:
@@ -173,6 +178,8 @@ if eval_mode == "intra":
             else:
                 X = np.vstack((X, data['X']))
                 Y = np.hstack((Y, data['Y']))
+            if not subj_num:
+                cond_col_names[1].append(cond_name)
         for train_index, eval_index in kf.split(
             X,
             Y,
@@ -182,22 +189,44 @@ if eval_mode == "intra":
             vect_result = evaluate(
                 X_train, y_train, X_eval, y_eval, clf_dict, score_dict, nbr_runs=nbr_runs
             )
+            vect_result_cond = evaluate_conditions(
+                X_train, y_train, X_eval, y_eval, clf_dict, nbr_runs=nbr_runs
+            )
+            if vect_result_cond_sum is None:
+                vect_result_cond_sum = vect_result_cond
+            else:
+                vect_result_cond_sum = np.add(vect_result_cond_sum, vect_result_cond)
             if len(array_result):
                 array_result = np.hstack((array_result, vect_result))
             else:
                 array_result = vect_result
         col_names[0].append(subj_name)
+        vect_result_cond_sum /= n_splits
         if len(array_result_tot):
             array_result_tot = np.hstack((array_result_tot, array_result))
         else:
             array_result_tot = array_result
+        if len(cond_array_result_tot):
+            cond_array_result_tot = np.hstack((cond_array_result_tot, vect_result_cond_sum))
+        else:
+            cond_array_result_tot = vect_result_cond_sum
         print(f"test on subject '{subj_name}' done")
         print(f"Mean Result = {np.mean(array_result_tot)}")
-    col_names[1] = add_suffix_to_list(add_prefix_to_list(col_names[1], "Fold_("), ")")
+    col_names[1] = add_prefix_to_list(col_names[1], "Fold_")
     col_names[0] = add_prefix_to_list(col_names[0], "Subj_")
+    cond_col_names[0] = col_names[0]
+
     col_multiindex = pd.MultiIndex.from_product(col_names, names=level_names)
     line_multiindex = pd.MultiIndex.from_product(index_names, names=["Classifiers", "Score_types"])
     df_results = pd.DataFrame(array_result_tot, columns=col_multiindex, index=line_multiindex)
     df_results_with_avg = get_df_results_avg(df_results)
-    write_excel(df_results_with_avg, path_results)
-    save_classif_report(df_results_with_avg, path_results)
+
+    cond_col_multiindex = pd.MultiIndex.from_product(cond_col_names, names=cond_level_names)
+    cond_df_results = pd.DataFrame(cond_array_result_tot, columns=cond_col_multiindex, index=clf_selection)
+    cond_df_results_with_avg = get_df_results_avg(cond_df_results)
+
+    write_excel(df_results_with_avg, path_results)  # TODO
+    write_excel(cond_df_results_with_avg, f"{path_results}_cond")  # TODO
+
+    save_classif_report(df_results_with_avg, path_results)  # TODO
+    save_classif_report(cond_df_results_with_avg, path_results)  # TODO
