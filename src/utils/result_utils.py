@@ -100,16 +100,17 @@ def save_excel(df, filename, extra_space=3):
     worksheet = writer.sheets["Sheet1"]
     # Set index cell width to the widest index name and the column cell width to the widest column name
     try:
-        if df.index.nlevels > 1:
-            for idx in range(0, df.index.nlevels):
+        for idx in range(0, df.index.nlevels):
+            length = 0
+            if df.index.nlevels > 1:
                 length = len(df.index.names[idx])
                 # Finds max name length in the level uniting the 'last' row names and the 'first' column names
-                if idx == df.index.nlevels - 1:
-                    length = max(length, max(len(str(name)) for name in df.columns.names))
-                max_length = max(
-                    length, max(len(str(row_label)) for row_label in df.index.get_level_values(idx))
-                )
-                worksheet.set_column(idx, idx, max_length + extra_space)
+            if idx == df.index.nlevels - 1:
+                length = max(length, max(len(str(name)) for name in df.columns.names))
+            max_length = max(
+                length, max(len(str(row_label)) for row_label in df.index.get_level_values(idx))
+            )
+            worksheet.set_column(idx, idx, max_length + extra_space)
 
         max_length = 0
         for idx, col in enumerate(df):

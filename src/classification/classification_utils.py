@@ -49,7 +49,7 @@ def get_df_results_avg(df):
                 ).join(df_with_avg)  # concat so multiindex column are automatically put as first column
     df_with_avg.insert(0, "Avg_total", df_with_avg.pop("Avg_total"))  # make Avg_total the first column
 
-    return df_with_avg.round(3)
+    return df_with_avg.astype(float).round(3)
 
 
 def evaluate(X, y, X_eval, y_eval, clf_dict, score_dict, nbr_runs=1):

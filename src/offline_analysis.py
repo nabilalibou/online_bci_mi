@@ -211,7 +211,7 @@ if eval_mode == "intra":
         else:
             cond_array_result_tot = vect_result_cond_sum
         print(f"test on subject '{subj_name}' done")
-        print(f"Mean Result = {np.mean(array_result_tot)}")
+        print(f"Mean Result = {np.mean(array_result_tot).round(3)}")
     col_names[1] = add_prefix_to_list(col_names[1], "Fold_")
     col_names[0] = add_prefix_to_list(col_names[0], "Subj_")
     cond_col_names[0] = col_names[0]
