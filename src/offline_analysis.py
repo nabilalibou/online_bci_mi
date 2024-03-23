@@ -26,7 +26,7 @@ mne.viz.set_browser_backend("qt")
 doPrepro = False
 data_repo = "../data"
 save_prepro = f"../data_preprocessed/"  # None
-subjects = ["na"]  # "na", "mp"
+subjects = ["na", "mp"]  # "na", "mp"
 experiments = ["left_arm", "right_arm"]  # "left_arm", "right_arm", "right_leg"
 paradigm = ["me"]  # 'me'  'mi'
 l_freq, h_freq = 2, 50
@@ -53,9 +53,9 @@ slide_windows_size = (
     1  # Will transform the feature into a 3D matrices to have batch of 2D frames  [10:80]
 )
 # kfold = "kfold"  # "stratified", "kfold" or "repstratified"
-score_selection = ["accuracy"]
+score_selection = ["accuracy", "balanced_acc"]
 clf_selection = ["KNN", "KNNnostd", "CSP + KNN", "CSP4 + KNN", "CSP4 + KNNstd", "rbfSVC", "eegnet"]
-clf_selection = ["Vect + stdScale + KNN"]
+clf_selection = ["Vect + stdScale + KNN", "Vect + SVC"]
 save_results = "../results/classif_report"
 start_path = save_results.rfind("/")
 folder = save_results[: start_path + 1]
@@ -201,7 +201,7 @@ if eval_mode == "intra":
             else:
                 array_result = vect_result
         col_names[0].append(subj_name)
-        vect_result_cond_sum = (vect_result_cond_sum/n_splits).round(3)
+        vect_result_cond_sum = vect_result_cond_sum/n_splits
         if len(array_result_tot):
             array_result_tot = np.hstack((array_result_tot, array_result))
         else:
@@ -222,8 +222,8 @@ if eval_mode == "intra":
     df_results_with_avg = get_df_results_avg(df_results)
 
     cond_col_multiindex = pd.MultiIndex.from_product(cond_col_names, names=cond_level_names)
-    cond_df_results = pd.DataFrame(cond_array_result_tot, columns=cond_col_multiindex, index=clf_selection)
-    cond_df_results_with_avg = get_df_results_avg(cond_df_results)
+    cond_df_results = pd.DataFrame(cond_array_result_tot, columns=cond_col_multiindex, index=clf_selection).astype(float).round(3)
+    # cond_df_results_with_avg = get_df_results_avg(cond_df_results)
 
     save_classif_report(df_results_with_avg, path_results)
-    save_classif_report(cond_df_results_with_avg, f"{path_results}_cond")
+    save_classif_report(cond_df_results, f"{path_results}_cond")
