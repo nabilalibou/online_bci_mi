@@ -40,14 +40,18 @@ def get_df_results_avg(df):
     # if want to rename avg_total sub col: https://stackoverflow.com/questions/41221079/rename-multiindex-columns-in-pandas
     df_with_avg = df.copy()
     df_with_avg["Avg_total"] = df.mean(axis=1)  # axis = 1 or 0
-    if isinstance(df.index, pd.MultiIndex):
+    if isinstance(df.columns, pd.MultiIndex):
         if all(len(df.columns.levels[i]) > 1 for i in range(len(df.columns.levels))):
             for level in range(len(df.columns.levels)):
                 df_avg = df.T.groupby(level=level, sort=False).mean().T
                 df_with_avg = pd.concat(
                     [df_avg], axis=1, keys=[f"Avg_{df.columns.names[level]}"]
-                ).join(df_with_avg)  # concat so multiindex column are automatically put as first column
-    df_with_avg.insert(0, "Avg_total", df_with_avg.pop("Avg_total"))  # make Avg_total the first column
+                ).join(
+                    df_with_avg
+                )  # concat so multiindex column are automatically put as first column
+    df_with_avg.insert(
+        0, "Avg_total", df_with_avg.pop("Avg_total")
+    )  # make Avg_total the first column
 
     return df_with_avg.astype(float).round(3)
 

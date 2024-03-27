@@ -142,11 +142,15 @@ def save_excel(df, filename, extra_space=3):
                     widest_col,  # cell's maximum adapted length
                 )
             )
-            worksheet.set_column(idx + df.index.nlevels, idx + df.index.nlevels, max_len + extra_space)
+            worksheet.set_column(
+                idx + df.index.nlevels, idx + df.index.nlevels, max_len + extra_space
+            )
         writer.close()
     except Exception as e:
         writer.close()
-        raise Exception(f"{e}. Automatic column adjustment could not be applied to the resulting spreadsheet")
+        raise Exception(
+            f"{e}. Automatic column adjustment could not be applied to the resulting spreadsheet"
+        )
 
 
 def save_classif_report(df, report_path):

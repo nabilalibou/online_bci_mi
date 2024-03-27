@@ -46,7 +46,7 @@ freq_bands = np.array([0.5, 4.0, 8.0, 13.0, 30.0, 100.0])
 features_list = ["raw"]
 
 # Classification parameters
-eval_mode = "intra"  # 'inter'
+eval_mode = "inter"  # 'inter'  'intra'
 nbr_runs = 1  # 7  => no need to be high for Keras NN models as there is 'nbr_epochs'
 n_splits = 6  # 6
 slide_windows_size = (
@@ -89,9 +89,9 @@ num_chans = 0
 num_features = 0
 data_dict = {}
 subj_data_length = [0]
-count = 0
 for subj in subjects:
     data_length = 0
+    count = 0
     data_dict[f"{subj}"] = {}
     for exp in experiments:
         if doPrepro:
@@ -128,8 +128,10 @@ for subj in subjects:
                 epoch_events = epochs.events[:, 2]
                 X = epochs.get_data(picks="eeg", tmin=epoch_time[0])
                 y = np.full(len(epoch_events), count)
-                data_dict[f"{subj}"][f"{exp}_{task}"]['X'] = get_features(X, features_list=features_list, sfreq=sfreq, funcs_params=funcs_params)
-                data_dict[f"{subj}"][f"{exp}_{task}"]['Y'] = y
+                data_dict[f"{subj}"][f"{exp}_{task}"]["X"] = get_features(
+                    X, features_list=features_list, sfreq=sfreq, funcs_params=funcs_params
+                )
+                data_dict[f"{subj}"][f"{exp}_{task}"]["Y"] = y
                 num_chans = X.shape[1]
                 num_features = X.shape[2]
                 data_length += len(epoch_events)
@@ -163,21 +165,19 @@ if eval_mode == "intra":
     array_result_tot = []
     cond_array_result_tot = []
     for subj_num, (subj_name, subj_data) in enumerate(data_dict.items()):
-        # col_names[1] = []
         # kf = KFold(n_splits=n_splits, shuffle=True)
         kf = StratifiedShuffleSplit(n_splits=n_splits)
-        col_names[1] = [str(i+1) for i in range(n_splits)]
+        col_names[1] = [str(i + 1) for i in range(n_splits)]
         array_result = []
-        vect_result_sum = 0
         vect_result_cond_sum = None
         X, Y = None, None
         for cond_num, (cond_name, data) in enumerate(subj_data.items()):
             if not cond_num:
-                X = data['X']
-                Y = data['Y']
+                X = data["X"]
+                Y = data["Y"]
             else:
-                X = np.vstack((X, data['X']))
-                Y = np.hstack((Y, data['Y']))
+                X = np.vstack((X, data["X"]))
+                Y = np.hstack((Y, data["Y"]))
             if not subj_num:
                 cond_col_names[1].append(cond_name)
         for train_index, eval_index in kf.split(
@@ -201,7 +201,7 @@ if eval_mode == "intra":
             else:
                 array_result = vect_result
         col_names[0].append(subj_name)
-        vect_result_cond_sum = vect_result_cond_sum/n_splits
+        vect_result_cond_sum /= n_splits
         if len(array_result_tot):
             array_result_tot = np.hstack((array_result_tot, array_result))
         else:
@@ -222,8 +222,75 @@ if eval_mode == "intra":
     df_results_with_avg = get_df_results_avg(df_results)
 
     cond_col_multiindex = pd.MultiIndex.from_product(cond_col_names, names=cond_level_names)
-    cond_df_results = pd.DataFrame(cond_array_result_tot, columns=cond_col_multiindex, index=clf_selection).astype(float).round(3)
+    cond_df_results = (
+        pd.DataFrame(cond_array_result_tot, columns=cond_col_multiindex, index=clf_selection)
+        .astype(float)
+        .round(3)
+    )
     # cond_df_results_with_avg = get_df_results_avg(cond_df_results)
 
     save_classif_report(df_results_with_avg, path_results)
     save_classif_report(cond_df_results, f"{path_results}_cond")
+
+elif eval_mode == "inter":
+    # Evaluation inter-subject
+    print("========")
+    col_names = []
+    cond_col_names = []
+    array_result = []
+    vect_result_cond = None
+    for subj_num, (eval_subj_name, eval_subj_data) in enumerate(data_dict.items()):
+        X_eval, Y_eval, X_train, Y_train = None, None, None, None
+        for cond_num, (cond_name, data) in enumerate(eval_subj_data.items()):
+            if not cond_num:
+                X_eval = data["X"]
+                Y_eval = data["Y"]
+            else:
+                X_eval = np.vstack((X_eval, data["X"]))
+                Y_eval = np.hstack((Y_eval, data["Y"]))
+            if not subj_num:
+                cond_col_names.append(cond_name)
+
+        for train_subj_name, train_subj_data in data_dict.items():
+            if train_subj_name != eval_subj_name:
+                for cond_num, (cond_name, data) in enumerate(train_subj_data.items()):
+                    if not cond_num:
+                        X_train = data["X"]
+                        Y_train = data["Y"]
+                    else:
+                        X_train = np.vstack((X_train, data["X"]))
+                        Y_train = np.hstack((Y_train, data["Y"]))
+
+        vect_result = evaluate(
+            X_train, Y_train, X_eval, Y_eval, clf_dict, score_dict, nbr_runs=nbr_runs
+        )
+        vect_result_cond = evaluate_conditions(
+            X_train, Y_train, X_eval, Y_eval, clf_dict, nbr_runs=nbr_runs
+        )
+        col_names.append(eval_subj_name)
+        if len(array_result):
+            array_result = np.hstack((array_result, vect_result))
+        else:
+            array_result = vect_result
+        if vect_result_cond is None:
+            vect_result_cond = vect_result_cond
+        else:
+            vect_result_cond = np.add(vect_result_cond, vect_result_cond)
+        print(f"test on subject '{eval_subj_name}' done")
+        print(f"Mean Result = {np.mean(array_result).round(3)}")
+
+    vect_result_cond /= len(data_dict.keys())
+    col_names = add_prefix_to_list(col_names, "Subj_")
+    line_multiindex = pd.MultiIndex.from_product(index_names, names=["Classifiers", "Score_types"])
+    df_results = pd.DataFrame(array_result, columns=col_names, index=line_multiindex)
+    df_results_with_avg = get_df_results_avg(df_results)
+
+    cond_df_results = (
+        pd.DataFrame(vect_result_cond, columns=cond_col_names, index=clf_selection)
+        .astype(float)
+        .round(3)
+    )
+    save_classif_report(df_results_with_avg, path_results)
+    save_classif_report(cond_df_results, f"{path_results}_cond")
+else:
+    raise ValueError("eval_mode need to be either 'intra' or 'inter'")

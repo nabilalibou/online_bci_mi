@@ -46,7 +46,7 @@ from sklearn.metrics import (
     cohen_kappa_score,
     f1_score,
     recall_score,
-    balanced_accuracy_score
+    balanced_accuracy_score,
 )
 from sklearn.base import BaseEstimator, TransformerMixin
 from src.classification.nn_models import *  # Precise the models used
@@ -95,7 +95,7 @@ _all_score_dict = {
     "precision": precision_score,
     "roc_auc": roc_auc_score,
     "kappa": cohen_kappa_score,
-    "balanced_acc": balanced_accuracy_score
+    "balanced_acc": balanced_accuracy_score,
 }
 
 
