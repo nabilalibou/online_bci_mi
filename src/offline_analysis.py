@@ -40,31 +40,22 @@ data_path_suffix = (
 )
 prepro_path_suffix = f"filt({l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.pkl"
 
-# Features parameters
-freq_bands = np.array([0.5, 4.0, 8.0, 13.0, 30.0, 100.0])
-# Check feature.extraction.get_features() documentation to see all available features
-features_list = ["raw"]
-
 # Classification parameters
-eval_mode = "inter"  # 'inter'  'intra'
+eval_mode = "intra"  # 'inter'  'intra'
 nbr_runs = 1  # 7  => no need to be high for Keras NN models as there is 'nbr_epochs'
 n_splits = 6  # 6
 slide_windows_size = (
-    1  # Will transform the feature into a 3D matrices to have batch of 2D frames  [10:80]
+    1  # Will transform the feature into a 3D matrices to have batch of 2D frames
 )
-# kfold = "kfold"  # "stratified", "kfold" or "repstratified"
 score_selection = ["accuracy", "balanced_acc"]
 clf_selection = ["KNN", "KNNnostd", "CSP + KNN", "CSP4 + KNN", "CSP4 + KNNstd", "rbfSVC", "eegnet"]
-clf_selection = ["Vect + stdScale + KNN", "Vect + SVC"]
-save_results = "../results/classif_report"
-start_path = save_results.rfind("/")
-folder = save_results[: start_path + 1]
-file_name = save_results[start_path + 1 :]
-file_name = "_".join((f"{eval_mode}_{n_splits}fold_{nbr_runs}runs_{data_path_suffix}", file_name))
-path_results = "".join((folder, file_name))
+clf_selection = ["Vect + stdScale + KNN", "Vect + SVC", "Cov + TS + LR"]
+report_path = f"../results/classif_report/{eval_mode}_{n_splits}fold_{nbr_runs}runs_{data_path_suffix}"
 
-# ===================== Check variables =====================
-lb = LabelBinarizer()
+# Features parameters
+# Check feature.extraction.get_features() documentation to see all available features
+features_list = ["raw"]
+freq_bands = np.array([0.5, 4.0, 8.0, 13.0, 30.0, 100.0])
 # feature parameters (see arguments from mne-feature functions at https://mne.tools/mne-features/api.html)
 funcs_params = None
 if "pow_freq_bands" in features_list:
@@ -76,6 +67,7 @@ if "pow_freq_bands" in features_list:
     }
 elif "energy_bands" in features_list:
     funcs_params = {"energy_bands__freq_bands": freq_bands}
+
 # ===================== Check variables =====================
 # Make a function
 if not isinstance(slide_windows_size, int) and slide_windows_size < 1:
@@ -84,6 +76,7 @@ if eval_mode == "intra" and (len(experiments) + len(paradigm)) < 2:
     raise ValueError(f"Not enough conditions to evaluate them in an intra-subject analyse")
 if eval_mode == "inter" and len(subjects) < 1:
     raise ValueError(f"Not enough subjects to evaluate them in an inter-subject analyse")
+
 # =============== Preprocessing & Data loading ===============
 num_chans = 0
 num_features = 0
@@ -139,7 +132,7 @@ for subj in subjects:
                 # sample size append paradigm first then for each cond then subj
     subj_data_length.append(data_length)
 
-# Cross-validation and Evaluate intra-subject, inter-subject
+# Cross-validation and Evaluate intra/inter-subject
 
 nn_defaut_params = dict(
     dropout_rate=0.5,
@@ -229,8 +222,8 @@ if eval_mode == "intra":
     )
     # cond_df_results_with_avg = get_df_results_avg(cond_df_results)
 
-    save_classif_report(df_results_with_avg, path_results)
-    save_classif_report(cond_df_results, f"{path_results}_cond")
+    save_classif_report(df_results_with_avg, report_path)
+    save_classif_report(cond_df_results, f"{report_path}_cond")
 
 elif eval_mode == "inter":
     # Evaluation inter-subject
@@ -290,7 +283,7 @@ elif eval_mode == "inter":
         .astype(float)
         .round(3)
     )
-    save_classif_report(df_results_with_avg, path_results)
-    save_classif_report(cond_df_results, f"{path_results}_cond")
+    save_classif_report(df_results_with_avg, report_path)
+    save_classif_report(cond_df_results, f"{report_path}_cond")
 else:
     raise ValueError("eval_mode need to be either 'intra' or 'inter'")

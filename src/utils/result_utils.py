@@ -47,6 +47,7 @@ def plot_fit_scores(history):
 
 def get_optimal_col_len(df, col, extra_space):
     """
+    Compute the suitable Excel cell size using the column names length from an input Dataframe.
     :param df:
     :param col:
     :param extra_space:
@@ -55,7 +56,7 @@ def get_optimal_col_len(df, col, extra_space):
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas.DataFrame")
     series = df[col]
-    len_longest_col_name = max(len(str(i)) for i in series.name)
+    suitable_cell_size = max(len(str(i)) for i in series.name)
     col_name_len = []  # column level name length list
     nb_level_indexes = []
     tot_len_level = []  # total length of all column names + extra spaces in one level of indexes
@@ -73,18 +74,19 @@ def get_optimal_col_len(df, col, extra_space):
 
             # Set cell's maximum adapted length for column col names
             if tot_len_level[-1] >= col_name_len[-2] + extra_space:
-                len_longest_col_name = max(col_name_len)
+                suitable_cell_size = max(col_name_len)
             elif tot_len_level[-1] < col_name_len[-2] + extra_space:
-                len_longest_col_name = (
+                suitable_cell_size = (
                     col_name_len[-1] + col_name_len[-2] + extra_space - tot_len_level[-1]
                 )
 
-    return len_longest_col_name
+    return suitable_cell_size
 
 
 def save_excel(df, filename, extra_space=3):
-    """Converts the DataFrame to an Excel file and taking multi-indexes into account. Excel cell length set to the size
-    of the largest DataFrame column name.
+    """
+    Converts the DataFrame to an Excel file and taking multi-indexes into account. Excel cell length will be set to the
+    size of the largest DataFrame column name.
 
     Parameters:
     df (pandas.DataFrame): The DataFrame to convert.
@@ -155,6 +157,8 @@ def save_excel(df, filename, extra_space=3):
 
 def save_classif_report(df, report_path):
     """
+    Convert the dataframe to an Excel object with a cell size suitable for human reading and save it. If the file
+    already exists,a new file will be created with a name including the date and time.
     :param df:
     :param report_path:
     :return:
