@@ -4,16 +4,24 @@ import pathlib
 import pandas as pd
 import numpy as np
 import seaborn as sns
+import keras
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
 
-def plot_confusion_matrix(y_true, y_pred):
+def plot_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray) -> None:
     """
-    Plot the confusion matrix
-    :param y_true:
-    :param y_pred:
-    :return:
+    Plots a confusion matrix for a classification task.
+    This function takes the true labels (`y_true`) and predicted labels (`y_pred`) as NumPy arrays
+    and creates a heatmap visualization of the confusion matrix using Seaborn. The confusion matrix
+    shows the distribution of how the classifier mapped true labels to predicted labels.
+    Args:
+        y_true (np.ndarray): The ground truth labels, a NumPy array of integers.
+        y_pred (np.ndarray): The predicted labels, a NumPy array of integers with the same length as `y_true`.
+    Returns:
+        None
+    Raises:
+        ValueError: May arise if `y_true` and `y_pred` have different lengths.
     """
     cf_matrix = confusion_matrix(y_true, y_pred)
     print("\nConfusion Matrix")
@@ -22,11 +30,20 @@ def plot_confusion_matrix(y_true, y_pred):
     plt.ylabel("True", fontsize=12)
 
 
-def plot_fit_scores(history):
+def plot_fit_scores(history: keras.callbacks.History) -> None:
     """
-    Plot training/validation accuracy/loss scores against the number of epochs.
-    :param history:
-    :return:
+    Plots training and validation accuracy/loss curves over epochs.
+    This function generates two subplots to visualize the training and validation
+    performance of a model trained using Keras' `fit` function. It extracts the
+    accuracy and loss histories from the provided `history` object (typically a
+    `keras.callbacks.History` instance) and plots them against the number of epochs.
+    Args:
+        history (keras.callbacks.History): The history object returned by the Keras
+            `fit` function, containing training and validation performance metrics.
+    Returns:
+        None
+    Raises:
+        ValueError: May arise if `history` is not a valid `keras.callbacks.History` object.
     """
     # Plot training and validation accuracy scores against the number of epochs.
     plt.plot(history.history["accuracy"], label="Train")
@@ -45,13 +62,19 @@ def plot_fit_scores(history):
     plt.legend(loc="upper right")
 
 
-def get_optimal_col_len(df, col, extra_space):
+def get_optimal_col_len(df: pd.DataFrame, col: str, extra_space: int) -> int:
     """
-    Compute the suitable Excel cell size using the column names length from an input Dataframe.
-    :param df:
-    :param col:
-    :param extra_space:
-    :return:
+    Calculates the optimal column width for a DataFrame column in Excel,
+    considering multi-index levels and extra space.
+    Args:
+        df (pd.DataFrame): The DataFrame containing the column to be analyzed.
+        col (str): The name of the column for which to calculate the optimal width.
+        extra_space (int): The desired extra space to be added to each column name,
+            for better readability in Excel.
+    Returns:
+        int: The calculated optimal column width (in characters) for the given column.
+    Raises:
+        TypeError: If `df` is not a pandas DataFrame.
     """
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas.DataFrame")
@@ -83,15 +106,31 @@ def get_optimal_col_len(df, col, extra_space):
     return suitable_cell_size
 
 
-def save_excel(df, filename, extra_space=3):
+def save_excel(df: pd.DataFrame, filename: str, extra_space: int = 3) -> None:
     """
-    Converts the DataFrame to an Excel file and taking multi-indexes into account. Excel cell length will be set to the
-    size of the largest DataFrame column name.
+    Saves a pandas DataFrame to an Excel file, considering multi-index levels and adjusting column widths for
+    readability.
+    This function efficiently saves a pandas DataFrame to an Excel file using the `xlsxwriter` engine.
+    It automatically calculates optimal column widths based on the following factors:
 
-    Parameters:
-    df (pandas.DataFrame): The DataFrame to convert.
-    filename (str): The path to the Excel file to write to.
-    extra_space (int): Extra space to add to the cell length for visual ergonomics.
+    - **Multi-index levels:** The function handles multi-index structures effectively,
+      determining the maximum width needed for each level name and data element.
+    - **Column names:** It considers the length of column names, including names from
+      all levels of a multi-index, to ensure proper width allocation.
+    - **Data values:** The function calculates the maximum string length of data values
+      within each column to accommodate potential long entries.
+    - **Extra space:** An optional `extra_space` parameter allows you to specify additional
+      spacing for visual improvement in the Excel spreadsheet.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to save as an Excel file.
+        filename (str): The path to the output Excel file.
+        extra_space (int, optional): The amount of extra space (in characters) to add
+            to each column width for better readability. Defaults to 3.
+
+    Raises:
+        TypeError: If `df` is not a pandas DataFrame or `extra_space` is not a positive integer.
+        Exception: If an error occurs during column width adjustment (non-critical, with informative message).
     """
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas.DataFrame")
@@ -155,13 +194,24 @@ def save_excel(df, filename, extra_space=3):
         )
 
 
-def save_classif_report(df, report_path):
+def save_classif_report(df: pd.DataFrame, report_path: str) -> None:
     """
-    Convert the dataframe to an Excel object with a cell size suitable for human reading and save it. If the file
-    already exists,a new file will be created with a name including the date and time.
-    :param df:
-    :param report_path:
-    :return:
+    Saves a classification report DataFrame to an Excel file with human-readable formatting
+    and automatic timestamp-based versioning (in case the file already exists).
+
+    This function saves a DataFrame containing a classification report to an Excel file
+    with the following key features:
+
+    - **Column Width Adjustment:** The function ensures optimal column widths for readability
+       by calling the `save_excel` function.
+    - **Automatic Filename Versioning:** If a file with the same name already exists,
+       a timestamp (YYYY-MM-DD_HH-MM-SS format) is appended to create a unique version.
+    - **Directory Creation:** Recursively creates any necessary parent directories for the file.
+
+    Args:
+        df (pd.DataFrame): The DataFrame containing the classification report to save.
+        report_path (str): The desired path to the output Excel file. If it doesn't end with
+            ".xlsx", the extension is added automatically.
     """
     if not report_path.endswith(".xlsx"):
         report_path = f"{report_path}.xlsx"

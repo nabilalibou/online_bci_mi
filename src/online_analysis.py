@@ -1,4 +1,3 @@
 """
-simulated online signals using the data
-Preprocessing + Feature extraction + Classification
+Online analysis (Preprocessing + Feature extraction + Condition prediction) will be done using MNE-LSL
 """
