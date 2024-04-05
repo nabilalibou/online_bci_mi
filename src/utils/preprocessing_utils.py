@@ -1,14 +1,20 @@
 """
 """
 import os
+import warnings
 import mne
 import csv
+from typing import Union
 from pathlib import Path
 import numpy as np
 import mne_icalabel
+import scipy
 from pyprep import NoisyChannels
-from scipy.signal import butter, lfilter
 from autoreject import get_rejection_threshold, read_reject_log
+from pyriemann.estimation import Covariances
+from pyriemann.clustering import Potato
+from pyriemann.utils.covariance import normalize
+from autoreject import AutoReject, Ransac, get_rejection_threshold
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -25,11 +31,31 @@ def butter_bandpass(lowcut, highcut, fs, order):
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
-    b, a = butter(order, [low, high], btype="band")
+    b, a = scipy.signal.butter(order, [low, high], btype="bandpass", output='ba')
     return b, a
 
 
-def butter_bandpass_filter(signal, lowcut, highcut, fs, order=5):
+def butter_bandpass_filter(signal: np.ndarray, lowcut: float, highcut: float, fs: float, order: int = 5) -> np.ndarray:
+    """
+    Applies a Butterworth bandpass filter to a 2D or 3D signal array.
+    This function implements a digital Butterworth bandpass filter using the `scipy.signal.butter_bandpass`
+    function and `scipy.signal.lfilter` for filtering. It takes the following arguments:
+
+    Args:
+        signal (np.ndarray): The input signal array. It can be either a 2D array
+            representing a single channel or a 3D array representing multiple channels
+            across trials. Supported array shapes are (n_time,) for 1D (deprecated),
+            (n_chans, n_time) for 2D (single channel), and (n_trials, n_chans, n_time) for 3D (multiple channels).
+        lowcut (float): Lower cutoff frequency of the filter in Hz.
+        highcut (float): Upper cutoff frequency of the filter in Hz.
+        fs (float): Sampling frequency of the signal in Hz.
+        order (int, optional): The order of the filter (default: 5). Higher orders
+            result in steeper roll-off at the cutoff frequencies but may also introduce
+            phase distortion.
+
+    Returns:
+        np.ndarray: The filtered signal array with the same shape as the input signal.
+    """
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     if len(signal.shape) == 2:
         n_chans, n_time = signal.shape
@@ -41,11 +67,36 @@ def butter_bandpass_filter(signal, lowcut, highcut, fs, order=5):
     filtered = np.zeros(signal.shape)
     for j in range(n_trials):
         for i in range(n_chans):
-            filtered[i] = lfilter(b, a, signal[i])
+            filtered[i] = scipy.signal.lfilter(b, a, signal[i])
     return filtered
 
 
-def cut_into_windows(X, y, windows_size):
+def cut_into_windows(X: np.ndarray, y: np.ndarray, windows_size: int) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Segments a 3D time-series signal array (`X`) and its corresponding labels (`y`)
+    into overlapping or non-overlapping windows.
+    This function takes a 3D time-series signal array (`X`) with shape (n_samples, n_features, n_timesteps)
+    and its corresponding labels (`y`)  and segments them into windows of a specified size (`windows_size`).
+    It outputs two modified arrays:
+
+    - Modified `X` array (shape can change): The function segments the time dimension (axis 2)
+      of the input `X` array into windows of size `windows_size`. Overlapping windows are created
+      if the original array length isn't perfectly divisible by `windows_size`.
+    - Modified `y` array (reshaped): The function replicates the labels (`y`) for each window
+      in the segmented `X` array.
+
+    Args:
+        X (np.ndarray): The 3D time-series signal array with shape (n_samples, n_features, n_timesteps).
+        y (np.ndarray): The labels array corresponding to each sample in `X` (can have various shapes).
+        windows_size (int): The size of the window to segment the time dimension of `X`.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: A tuple containing the modified `X` and `y` arrays.
+
+    Raises:
+        ValueError: If `windows_size` is greater than 1 and the length of the time dimension
+            in `X` isn't divisible by `windows_size`.
+    """
     if windows_size > 1:
         if not X.shape[2] % windows_size == 0:
             raise ValueError(
@@ -237,6 +288,288 @@ def annotate_by_markers(raw_eeg, subj, events_csv, me_event_id, mi_event_id):
     return raw_eeg.set_annotations(annot_from_events), events
 
 
+def get_good_eeg_chan(data: mne.io.Raw) -> list[str]:
+    """
+    Extracts a list of good EEG channel names from an MNE Raw object, excluding bad channels.
+    This function identifies and returns a list of EEG channel names from an MNE Raw object
+    that meet the following criteria:
+    - **Channel Type:** The channel's `kind` attribute is 2, indicating EEG.
+    - **Not a Bad Channel:** The channel name is not listed in the `bads` list within the Raw object's information.
+
+    Args:
+        data (mne.io.Raw): The MNE Raw object containing the EEG data.
+
+    Returns:
+        list[str]: A list of good EEG channel names.
+    """
+    good_eeg_chan = []
+    for ch in data.info["chs"]:
+        if ch["kind"] == 2 and ch["ch_name"] not in data.info["bads"]:
+            good_eeg_chan.append(ch["ch_name"])
+    return good_eeg_chan
+
+
+def bad_by_peak_to_peak(data: np.ndarray, sfreq: float, window_secs: float = 1, reject_value: float = 100e-6) -> np.ndarray:
+    """
+    Identifies potentially bad channels based on median peak-to-peak amplitudes within non-overlapping windows.
+    This function flags channels as potentially bad if their median peak-to-peak amplitude value
+    within non-overlapping windows exceeds a specified rejection threshold. It works as follows:
+
+    1. **Windowing and Peak-to-Peak Calculation:** The function divides the data into windows with a
+       specified width (`window_secs`) and calculates the peak-to-peak amplitude for each window
+       and channel.
+    2. **Median Calculation:** For each channel, it calculates the median of the peak-to-peak amplitudes
+       across all windows.
+    3. **Thresholding:** It compares the median peak-to-peak value for each channel to a specified
+       rejection threshold (`reject_value`). Channels with median peak-to-peak values above this threshold
+       are considered potentially bad.
+
+    Args:
+        data (np.ndarray): The EEG data, expected to have shape (n_channels, n_timepoints).
+        sfreq (float): The sampling frequency of the EEG data in Hz.
+        window_secs (float, optional): The width of the non-overlapping windows in seconds (default: 1).
+        reject_value (float, optional): The rejection threshold for median peak-to-peak amplitudes
+            (default: 100e-6).
+
+    Returns:
+        np.ndarray: A boolean NumPy array of shape (n_channels,) indicating potentially bad channels
+            (True for bad channels, False for good channels).
+    """
+    ch_deltas = np.zeros(data.shape[0])
+    sfreq = int(sfreq)
+    window = int(window_secs * sfreq)
+    sum_deltas = np.zeros((data.shape[0], int(data.shape[1] / window)))
+    for ch_idx in range(data.shape[0]):
+        for s in range(int((data.shape[1] / window))):
+            sum_deltas[ch_idx, s] = np.max(data[ch_idx, s * window : (s + 1) * window]) - np.min(
+                data[ch_idx, s * window : (s + 1) * window]
+            )
+        ch_deltas[ch_idx] = np.median(sum_deltas[ch_idx, :])
+    return np.asarray(np.greater(ch_deltas, reject_value))
+
+
+def bad_by_PSD(data: Union[mne.io.BaseRaw, mne.Epochs], fmin: float = 0, fmax: float = np.inf, sd: float = 3) -> np.ndarray:
+    """
+    Identifies potentially bad channels based on deviations in their power spectral density (PSD) values.
+
+    This function detects channels with unusually high or low PSD values compared to other channels
+    or the expected PSD distribution, potentially indicating artifacts or recording issues.
+
+    Args:
+        data (Union[mne.io.BaseRaw, mne.Epochs]): The EEG data, either as an MNE Raw object or an MNE Epochs object.
+        fmin (float, optional): The lower frequency bound for PSD calculation (default: 0 Hz).
+        fmax (float, optional): The upper frequency bound for PSD calculation (default: infinity).
+        sd (float, optional): The Z-score threshold for identifying potentially bad channels (default: 3).
+
+    Returns:
+        np.ndarray: A boolean NumPy array of shape (n_channels,) indicating potentially bad channels
+            (True for bad channels, False for good channels).
+
+    Raises:
+        TypeError: If the `data` argument is not an MNE Raw or Epochs object.
+
+    Notes:
+        - Uses the Welch method for PSD calculation with Raw objects and the multitaper method with Epochs objects.
+        - For Epochs objects, it compares each epoch's PSD to the median PSD across epochs for robust outlier detection.
+        - Z-scores for PSD values are calculated to standardize comparisons across channels and frequencies.
+    """
+    if isinstance(data, mne.io.BaseRaw):
+        method = "welch"
+        data_size = len(get_good_eeg_chan(data))
+        psd = data.compute_psd(method=method, fmin=fmin, fmax=fmax)
+        log_psd = 10 * np.log10(psd.get_data())
+        zscore_psd = scipy.stats.zscore(log_psd)
+    elif isinstance(data, mne.Epochs):
+        method = "multitaper"
+        data_size = len(data)
+        psd = data.compute_psd(method=method, fmin=fmin, fmax=fmax, adaptive=True)
+        log_psd = 10 * np.log10(psd.get_data())
+        psd_avg = np.median(log_psd, axis=0)
+        zscore_psd = scipy.stats.zscore(np.sum(log_psd - psd_avg, axis=1))
+    else:
+        raise TypeError("data need to be a MNE Raw or Epochs object")
+    mask = np.zeros(data_size, dtype=bool)
+    for i in range(len(mask)):
+        mask[i] = any(zscore_psd[i] > sd)
+    return mask
+
+
+def detect_badChan(
+    raw_data, fmin=None, fmax=None, useRansac=False, keepEOG=False, Return_log=False, **kwargs
+):
+    """
+    Detects bad or missing channels in MNE Raw data using various criteria.
+    Todo: should not take into account 'bad' annotations like the functions from MNE (epoch, psd ...)
+    This function identifies channels that exhibit characteristics indicative of
+    noise or artifacts, including:
+
+    - Flat signal (minimal activity)
+    - Peak-to-peak amplitude.
+    - High deviation from the mean
+    - Insufficient correlation with other channels
+    - Abnormal power spectral density (PSD) distribution
+
+    Optionally, the RANSAC (RANdom SAmple Consensus) algorithm can be used
+    for more robust bad channel detection.
+
+    Parameters:
+    - raw_data (MNE Raw): The MNE Raw data object containing the EEG channels.
+    - fmin (float, optional): The lower frequency of interest for filtering. Defaults to None.
+    - fmax (float, optional): The upper frequency of interest for filtering. Defaults to None.
+    - useRansac (bool, optional): Whether to use RANSAC for bad channel detection. Defaults to False.
+    - keepEOG (bool, optional): If True, attempt to retain frontal channels (starting with "F" or "AF")
+        that might have been marked bad due to EOG artifacts. Defaults to False.
+    - Return_log (bool, optional): If True, return a dictionary containing channel detection criteria
+        and the associated bad channels. Defaults to False.
+    - kwargs: Additional keyword arguments passed to the `pyprep.NoisyChannels` methods:
+        - reject_peak_to_peak (windows=5, reject_value=100e-6): Peak-to-peak rejection parameters.
+        - nc.find_bad_by_correlation (correlation_secs=1.0, correlation_threshold=0.2, frac_bad=0.01):
+            Correlation rejection parameters.
+        - nc.find_bad_by_deviation (deviation_threshold=6.0): Deviation rejection threshold.
+        - bad_by_PSD (sd=3): PSD rejection standard deviation threshold.
+
+    Returns:
+    - list: A list of channel names identified as bad.
+    - dict (optional): If `Return_log` is True, returns a dictionary with bad channels for each detection criterion.
+    """
+    assert isinstance(Return_log, bool)
+    assert isinstance(keepEOG, bool)
+    assert isinstance(useRansac, bool)
+    if "deviation_threshold" in kwargs.keys():
+        deviation_threshold = kwargs["deviation_threshold"]
+    else:
+        deviation_threshold = 6.0
+    if "correlation_threshold" in kwargs.keys():
+        correlation_threshold = kwargs["correlation_threshold"]
+    else:
+        correlation_threshold = 0.2
+    raw_eeg = raw_data.copy().pick("eeg")
+    config = {
+        "global": {
+            "ch_names": None,
+            "low_freq": fmin,
+            "high_freq": fmax,
+            "deviation_threshold": deviation_threshold,
+            "correlation_threshold": correlation_threshold,
+        }
+    }
+    if keepEOG:
+        config_eog = {
+            "keepEOG": {
+                "ch_names": [
+                    ch
+                    for ch in raw_eeg.info["ch_names"]
+                    if ch.startswith("F") or ch.startswith("AF")
+                ],
+                "low_freq": 15,
+                "high_freq": fmax,
+                "deviation_threshold": deviation_threshold - 2,
+                "correlation_threshold": correlation_threshold + 0.08,
+            },
+        }
+        config.update(config_eog)
+    log_dict = {"ptp": [], "flat": [], "correlation": [], "deviation": [], "psd": [], "ransac": []}
+    bad_chans = []
+    for k, v in config.items():
+        raw_filtered = raw_eeg.copy().filter(
+            v["low_freq"], v["high_freq"], v["ch_names"], verbose="ERROR"
+        )
+
+        # PTP rejection
+        mask = bad_by_peak_to_peak(
+            raw_filtered.get_data(), raw_filtered.info["sfreq"], reject_value=100e-6
+        )
+        channel_used = get_good_eeg_chan(raw_filtered)
+        bad_by_ptp = [chan for i, chan in enumerate(channel_used) if mask[i]]
+        log_dict["ptp"].extend(bad_by_ptp)
+        raw_filtered.info["bads"].extend(bad_by_ptp)
+        if (
+            len(bad_by_ptp) == channel_used
+        ):  # if all channels bad by ptp no need to use NoisyChannels
+            continue
+
+        try:
+            # Flat rejection
+            nc = NoisyChannels(raw_filtered)  # auto run 'find_bad_by_nan_flat()' when instantiated
+            log_dict["flat"].extend(nc.get_bads())
+
+            # Correlation rejection
+            nc.find_bad_by_correlation(correlation_threshold=v["correlation_threshold"])
+            log_dict["correlation"].extend(nc.get_bads())
+
+            # Deviation rejection
+            nc.find_bad_by_deviation(deviation_threshold=v["deviation_threshold"])
+            log_dict["deviation"].extend(nc.get_bads())
+            raw_filtered.info["bads"].extend(nc.get_bads())
+
+            # PSD rejection
+            if not v["high_freq"]:
+                if not raw_filtered.info["lowpass"]:
+                    fmax = np.inf
+                else:
+                    fmax = raw_filtered.info["lowpass"]
+            else:
+                fmax = v["high_freq"]
+            if not v["low_freq"]:
+                if not raw_filtered.info["highpass"]:
+                    fmin = 0
+                else:
+                    fmin = raw_filtered.info["highpass"]
+            else:
+                fmin = v["low_freq"]
+            mask = bad_by_PSD(raw_filtered, fmin=fmin, fmax=fmax)
+            channel_used = get_good_eeg_chan(raw_filtered)
+            bad_by_psd = [chan for i, chan in enumerate(channel_used) if mask[i]]
+            log_dict["psd"].extend(bad_by_psd)
+            raw_filtered.info["bads"].extend(bad_by_psd)
+
+            # Ransac rejection
+            if useRansac:
+                nc.find_bad_by_ransac()
+                log_dict["ransac"].extend(nc.get_bads())
+                print(f"Bads by ransac: {nc.bad_by_ransac}")
+                raw_filtered.info["bads"].extend(nc.get_bads())
+        except ValueError as e:  # all channels have been removed by ptp
+            warnings.warn(
+                f"ValueError: {e}. \nAll channels have been labelled bad by peak-to-peak."
+            )
+        bad_chans.extend(raw_filtered.info.get("bads", []))
+    bad_chans = list(set(bad_chans))
+    print(bad_chans)
+
+    if Return_log:
+        for k, v in log_dict.items():
+            if v:
+                log_dict[k] = list(set(v))
+        return bad_chans, log_dict
+    return bad_chans
+
+
+def detect_badChan_by_ransac(epochs, ransac_corr=0.75, sample_prop=0.25):
+    """
+    Identifies bad channels in EEG epochs using the RANSAC algorithm.
+    This function employs a modified RANSAC implementation from Autoreject
+    that is specifically designed to handle EEG epochs (looks more stable and
+    raise less random errors).
+
+    Parameters:
+    - epochs (Epochs): An MNE Epochs object containing preprocessed EEG epochs.
+    - ransac_corr (float, optional): Minimum correlation coefficient required
+       between predicted and actual signals for a channel to be considered good.
+       Defaults to 0.75.
+    - sample_prop (float, optional): Proportion of total channels to use for
+       signal prediction in each RANSAC sample. Should be between 0 and 1,
+       excluding those extremes. Defaults to 0.25.
+
+    Returns:
+    - list: A list of channel names identified as bad by RANSAC.
+    """
+    ransac = Ransac(min_corr=ransac_corr)
+    ransac.fit(epochs)
+    print(f"Additional bad channels found by RANSAC: {ransac.bad_chs_}")
+    return ransac.bad_chs_
+
+
 def perform_ica(eeg_data, plot_topo=False, topo_saveas=None, return_sources=False, ic_min_var=0.01):
     """
     Perform Independent Component Analysis + automatically remove artifact with ICLabel
@@ -371,14 +704,12 @@ def offline_preprocess(
 
     # Filter
     # raw_eeg.notch_filter(50)
-    raw_eeg.filter(l_freq=l_freq, h_freq=h_freq, picks="eeg", verbose=False)
-    # raw_filtered = butter_bandpass_filter(raw_eeg, l_freq, h_freq, raw_eeg.info['sfreq'])
+    raw_eeg.filter(l_freq=l_freq, h_freq=h_freq, verbose=False)
 
     # Find bad/missing channels and interpolate them
-    nc = NoisyChannels(raw_eeg)
-    nc.find_bad_by_correlation(correlation_threshold=0.2)
-    nc.find_bad_by_deviation(deviation_threshold=6.0)
-    print(nc.get_bads())
+    raw_eeg.info["bads"], chan_drop_log = detect_badChan(
+        raw_eeg, l_freq, h_freq, keepEOG=True, Return_log=True
+    )
     if raw_eeg.info["bads"]:
         raw_eeg = raw_eeg.interpolate_bads(reset_bads=True)
 
