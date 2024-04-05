@@ -7,12 +7,13 @@ The tasks were to lift a limb then imagine raising it through 3 different sessio
 left arm, the right arm and the right leg.
 
 Ultimately the idea is to create a real-time BCI able to accurately and robustly classify
-the different limb movements (motor execution) and imagined movements (motor imagery) to operate 
-commands (rock, paper, scissor) on a graphical user interface of a game.
+the different limb movements (motor execution) and imagined movements (motor imagery) using 
+very little data to train with. The final application has yet to be defined, but my first thought was to 
+operate the commands of a little rock-paper-scissor game displayed with a graphical user interface.
 
 The first part is an offline study of the recorded EEG signals in order to test different preprocessing
 and various classification strategies.
-The second part is to perform online analysis and decoding using [MNE-realtime](https://github.com/mne-tools/mne-realtime).
+The second part is to perform online analysis and decoding using [MNE-lsl](https://github.com/mne-tools/mne-lsl).
 
 # Installation
 
@@ -40,6 +41,8 @@ five seconds and are executed in rhythm with an electronic bell sound.
 - 1st session: lifting the **left arm** during 5 sec (ME) then imagining the same movement (MI).
 - 2nd session: Same ME and MI task with the **right arm**.
 - 3rd session: ME and MI with the **right leg**.
+
+In all we obtained **50 trials** for each condition.
 
 **Material**: A TMSI 32-channel gel headcap was used to record the EEG signal with a 2064 Hz sampling 
 frequency. The electrode montage was in  accordance with the standard 5% 10/20 System.
