@@ -1,7 +1,6 @@
 """
 """
 import mne
-import pickle
 import numpy as np
 from utils.preprocessing_utils import get_reported_bad_trials, offline_preprocess
 from feature.extraction import get_features
@@ -36,13 +35,13 @@ prepro_path_suffix = f"filt({l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doIC
 # Classification parameters
 eval_mode = "intra"  # 'inter'  'intra'
 nbr_runs = 1  # 7  => no need to be high for Keras NN models as there is 'nbr_epochs'
-n_splits = 6  # 6
+n_splits = 10  # 6
 slide_windows_size = (
     1  # Will transform the feature into a 3D matrices to have batch of 2D frames
 )
 score_selection = ["accuracy", "balanced_acc"]
 clf_selection = ["KNN", "KNNnostd", "CSP + KNN", "CSP4 + KNN", "CSP4 + KNNstd", "rbfSVC", "eegnet"]
-clf_selection = ["Vect + stdScale + KNN", "Vect + SVC", "Cov + TS + LR"]
+clf_selection = ["Vect + stdScale + KNN", "Vect + SVC"]
 report_path = f"../results/classif_report/{eval_mode}_{n_splits}fold_{nbr_runs}runs_{data_path_suffix}"
 
 # Features parameters
@@ -102,13 +101,12 @@ for subj in subjects:
                 prepro_repo = f"{save_prepro}channels/"
                 prefix = "prepro"
             for task in paradigm:
-                epoch_pickle_path = (
+                epoch_path = (
                     f"{prepro_repo}{prefix}_{subj}_{exp}_{task}_{prepro_path_suffix}"
                 )
                 data_dict[f"{subj}"][f"{exp}_{task}"] = {}
                 try:
-                    with open(epoch_pickle_path, "rb") as file1:
-                        epochs = pickle.load(file1)
+                    epochs = mne.read_epochs(epoch_path, proj=True, preload=True, verbose=None)
                 except FileNotFoundError as e:
                     raise FileNotFoundError(e)
                 epoch_events = epochs.events[:, 2]
@@ -142,8 +140,8 @@ clf_dict = return_clf_dict(clf_selection, nn_defaut_params)
 
 match eval_mode:
     case "intra":
-        evaluate_intra_subject(data_dict, n_splits, clf_dict, score_dict, nbr_runs)
+        evaluate_intra_subject(data_dict, n_splits, clf_dict, score_dict, nbr_runs, report_path)
     case "inter":
-        evaluate_inter_subject(data_dict, clf_dict, score_dict, nbr_runs)
+        evaluate_inter_subject(data_dict, clf_dict, score_dict, nbr_runs, report_path)
     case _:
         raise ValueError("eval_mode need to be either 'intra' or 'inter'")

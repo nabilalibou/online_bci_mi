@@ -5,7 +5,6 @@ import mne
 import csv
 from pathlib import Path
 import numpy as np
-import pickle
 import mne_icalabel
 from pyprep import NoisyChannels
 from scipy.signal import butter, lfilter
@@ -330,7 +329,7 @@ def offline_preprocess(
     subject,
     experiment,
     data_repo="../data",
-    l_freq=2,
+    l_freq=0.1,
     h_freq=50,
     epoch_time=(-1.5, 0),
     sfreq=512,
@@ -433,7 +432,7 @@ def offline_preprocess(
                 pass
             prepro_file_path = (
                 f"{prepro_repo}{prefix}_{subject}_{experiment}_{cond_dict[event_id]}_filt("
-                f"{l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.pkl"
+                f"{l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.fif"
             )
             erptopo_path = (
                 f"{prepro_repo}{prefix}_{subject}_{experiment}_{cond_dict[event_id]}_filt("
@@ -456,8 +455,7 @@ def offline_preprocess(
                     times=times, average=0.050, ncols="auto", nrows="auto", show=False
                 )
                 topo_fig.savefig(topo_path, format="png", bbox_inches="tight")
-            with open(prepro_file_path, "wb") as f:
-                pickle.dump(epochs, f)
+            epochs.save(prepro_file_path, overwrite=True)
             print(f"file {prepro_file_path} along its evoked erp saved")
 
     return epochs

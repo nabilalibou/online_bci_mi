@@ -182,7 +182,7 @@ def evaluate_intra_subject(
     report_path: str,
 ) -> None:
     """
-    Performs intra-subject evaluation using K-Fold cross-validation.
+    Performs intra-subject evaluation using Stratified K-Fold cross-validation.
     This function evaluates the performance of multiple classifiers (defined in `clf_dict`)
     on a single subject's data using K-Fold cross-validation with a specified number of splits (`n_splits`).
     It computes various scores (defined in `score_dict`) for each classifier and fold,
