@@ -435,14 +435,8 @@ def detect_badChan(
     assert isinstance(Return_log, bool)
     assert isinstance(keepEOG, bool)
     assert isinstance(useRansac, bool)
-    if "deviation_threshold" in kwargs.keys():
-        deviation_threshold = kwargs["deviation_threshold"]
-    else:
-        deviation_threshold = 6.0
-    if "correlation_threshold" in kwargs.keys():
-        correlation_threshold = kwargs["correlation_threshold"]
-    else:
-        correlation_threshold = 0.2
+    deviation_threshold = kwargs.get("deviation_threshold", 6.0)
+    correlation_threshold = kwargs.get("correlation_threshold", 0.2)
     raw_eeg = raw_data.copy().pick("eeg")
     config = {
         "global": {
@@ -480,8 +474,8 @@ def detect_badChan(
             raw_filtered.get_data(), raw_filtered.info["sfreq"], reject_value=100e-6
         )
         channel_used = get_good_eeg_chan(raw_filtered)
-        bad_by_ptp = [chan for i, chan in enumerate(channel_used) if mask[i]]
-        log_dict["ptp"].extend(bad_by_ptp)
+        bad_by_ptp = np.asarray(channel_used)[mask]
+        log_dict["ptp"] = list(bad_by_ptp)
         raw_filtered.info["bads"].extend(bad_by_ptp)
         if (
             len(bad_by_ptp) == channel_used
