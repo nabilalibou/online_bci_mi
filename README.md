@@ -2,10 +2,10 @@
 
 This repository explores the development of a real-time Brain-Computer Interface (BCI) capable of classifying motor 
 execution and motor imagery tasks using EEG signals. The ultimate goal is to create a rock-paper-scissors game 
-controlled by BCI.  
+controlled by BCI using minimal training data.
 
 The project arose from a desire to compete in various games using BCI technology. We aimed to develop a system that 
-accurately classifies different limb movements with minimal training data.
+accurately classifies different limb movements using only 50 training samples per condition.
 
 ## Approach:
 

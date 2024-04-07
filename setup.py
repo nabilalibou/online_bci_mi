@@ -1,13 +1,14 @@
 from setuptools import find_packages, setup
 
 setup(
-    name="eeg_clf_sandbox",
+    name="online_bci_mi",
     version="0.0.1",
-    url="https://github.com/Nabil-AL/eeg-clf_sandbox.git",
+    url="https://github.com/nabilalibou/online_bci_mi.git",
     packages=find_packages(),
     license="MIT",
-    author="Nabil AL",
-    description="Repository used to test several preprocessing/classification pipelines "
-    "on brain signals (EEG/EMG/MEG datasets).",
+    author="Nabil Alibou",
+    description="This repository explores the development of a real-time Brain-Computer Interface (BCI) capable of "
+                "classifying motor execution and motor imagery tasks using EEG signals. The ultimate goal is to create "
+                "a rock-paper-scissors game controlled by BCI.",
     python_requires=">=3.10",
 )

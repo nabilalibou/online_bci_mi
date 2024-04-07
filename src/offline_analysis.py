@@ -17,7 +17,7 @@ mne.viz.set_browser_backend("qt")
 # Preprocessing parameters
 doPrepro = False
 data_repo = "../data"
-save_prepro = f"../data_preprocessed/"  # None
+save_prepro = f"../results/data_preprocessed/"
 subjects = ["na", "mp"]  # "na", "mp"
 experiments = ["left_arm", "right_arm"]  # "left_arm", "right_arm", "right_leg"
 paradigm = ["me"]  # 'me'  'mi'
