@@ -15,6 +15,7 @@ from pyriemann.estimation import Covariances
 from pyriemann.clustering import Potato
 from pyriemann.utils.covariance import normalize
 from autoreject import AutoReject, Ransac, get_rejection_threshold
+from utils.data_utils import auto_weight_chan_dict
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -71,53 +72,89 @@ def butter_bandpass_filter(signal: np.ndarray, lowcut: float, highcut: float, fs
     return filtered
 
 
-def cut_into_windows(X: np.ndarray, y: np.ndarray, windows_size: int) -> tuple[np.ndarray, np.ndarray]:
+# def cut_into_windows(X: np.ndarray, y: np.ndarray, windows_size: int) -> tuple[np.ndarray, np.ndarray]:
+#     """
+#     Segments a 3D time-series signal array (`X`) and its corresponding labels (`y`)
+#     into overlapping or non-overlapping windows.
+#     This function takes a 3D time-series signal array (`X`) with shape (n_samples, n_features, n_timesteps)
+#     and its corresponding labels (`y`)  and segments them into windows of a specified size (`windows_size`).
+#     It outputs two modified arrays:
+#
+#     - Modified `X` array (shape can change): The function segments the time dimension (axis 2)
+#       of the input `X` array into windows of size `windows_size`. Overlapping windows are created
+#       if the original array length isn't perfectly divisible by `windows_size`.
+#     - Modified `y` array (reshaped): The function replicates the labels (`y`) for each window
+#       in the segmented `X` array.
+#
+#     Args:
+#         X (np.ndarray): The 3D time-series signal array with shape (n_samples, n_features, n_timesteps).
+#         y (np.ndarray): The labels array corresponding to each sample in `X` (can have various shapes).
+#         windows_size (int): The size of the window to segment the time dimension of `X`.
+#
+#     Returns:
+#         tuple[np.ndarray, np.ndarray]: A tuple containing the modified `X` and `y` arrays.
+#
+#     Raises:
+#         ValueError: If `windows_size` is greater than 1 and the length of the time dimension
+#             in `X` isn't divisible by `windows_size`.
+#     """
+#     if windows_size > 1:
+#         if not X.shape[2] % windows_size == 0:
+#             raise ValueError(
+#                 f"'{X.shape[2]}' not divisible by slide_windows_size value :'{windows_size}'"
+#             )
+#         # X = np.reshape(X, (slide_windows_size*X.shape[0], X.shape[1], -1))
+#         X_segm = np.zeros((windows_size * X.shape[0], X.shape[1], int(X.shape[2] / windows_size)))
+#         for i in range(X.shape[0]):
+#             for m in range(windows_size):
+#                 k1 = m * int(X.shape[2] / windows_size)
+#                 k2 = (m + 1) * int(X.shape[2] / windows_size)
+#                 X_segm[i * windows_size + m, :, :] = X[i, :, k1:k2]
+#         X = X_segm
+#         y = []
+#         for i in range(0, len(y)):
+#             j = 0
+#             while j < windows_size:
+#                 y.append(y[i])
+#                 j += 1
+#         y = np.squeeze(y)
+#     return X, y
+
+
+def cut_into_windows(X: np.ndarray, y: np.ndarray, window_size: int, stride=1) -> tuple[np.ndarray, np.ndarray]:
     """
     Segments a 3D time-series signal array (`X`) and its corresponding labels (`y`)
     into overlapping or non-overlapping windows.
-    This function takes a 3D time-series signal array (`X`) with shape (n_samples, n_features, n_timesteps)
-    and its corresponding labels (`y`)  and segments them into windows of a specified size (`windows_size`).
-    It outputs two modified arrays:
-
-    - Modified `X` array (shape can change): The function segments the time dimension (axis 2)
-      of the input `X` array into windows of size `windows_size`. Overlapping windows are created
-      if the original array length isn't perfectly divisible by `windows_size`.
-    - Modified `y` array (reshaped): The function replicates the labels (`y`) for each window
-      in the segmented `X` array.
 
     Args:
         X (np.ndarray): The 3D time-series signal array with shape (n_samples, n_features, n_timesteps).
         y (np.ndarray): The labels array corresponding to each sample in `X` (can have various shapes).
-        windows_size (int): The size of the window to segment the time dimension of `X`.
+        window_size (int): The size of the window to segment the time dimension of `X`.
+        stride (int, optional): The number of steps to slide between consecutive windows. Defaults to 1 (non-overlapping).
 
     Returns:
         tuple[np.ndarray, np.ndarray]: A tuple containing the modified `X` and `y` arrays.
 
     Raises:
-        ValueError: If `windows_size` is greater than 1 and the length of the time dimension
-            in `X` isn't divisible by `windows_size`.
+        ValueError: If `window_size` is larger than the length of the time dimension in `X`.
     """
-    if windows_size > 1:
-        if not X.shape[2] % windows_size == 0:
-            raise ValueError(
-                f"'{X.shape[2]}' not divisible by slide_windows_size value :'{windows_size}'"
-            )
-        # X = np.reshape(X, (slide_windows_size*X.shape[0], X.shape[1], -1))
-        X_segm = np.zeros((windows_size * X.shape[0], X.shape[1], int(X.shape[2] / windows_size)))
-        for i in range(X.shape[0]):
-            for m in range(windows_size):
-                k1 = m * int(X.shape[2] / windows_size)
-                k2 = (m + 1) * int(X.shape[2] / windows_size)
-                X_segm[i * windows_size + m, :, :] = X[i, :, k1:k2]
-        X = X_segm
-        y = []
-        for i in range(0, len(y)):
-            j = 0
-            while j < windows_size:
-                y.append(y[i])
-                j += 1
-        y = np.squeeze(y)
-    return X, y
+
+    if window_size > X.shape[2]:
+        raise ValueError(f"Window size ({window_size}) cannot be larger than signal length ({X.shape[2]})")
+
+    # Calculate the number of windows based on window size and stride
+    n_windows = (X.shape[2] - window_size + 1) // stride
+
+    # Use efficient sliding window view for window creation
+    X_segm = np.lib.stride_tricks.sliding_window_view(X, window_shape=(X.shape[1], window_size))
+
+    # Reshape to create the final segmented X array
+    X_segm = X_segm.reshape(n_windows, X.shape[0], X.shape[1], window_size)
+
+    # Handle labels (replicate for each window using tile)
+    y_ = np.tile(y[:, np.newaxis], (1, n_windows))
+
+    return X_segm, y_
 
 
 def get_cond_id(exp):
@@ -159,9 +196,13 @@ def get_reported_bad_trials():
 
 def map_chan_type(raw_eeg):
     """
-    Return a dict mapping channel names to MNE types
-    :param raw_eeg:
-    :return:
+    Returns a dictionary mapping channel names to MNE channel types.
+    Args:
+        raw_eeg (mne.io.Raw): An MNE Raw object containing EEG data.
+    Returns:
+        dict: A dictionary mapping channel names to corresponding MNE channel types (eog, stim, eeg, or misc).
+    Raises:
+        ValueError: If a channel name doesn't match any of the defined patterns.
     """
     chan_names = raw_eeg.ch_names
     mapping_type = {}
@@ -185,7 +226,8 @@ def get_cond_epochs(
     raw_eeg,
     events,
     event_id,
-    epoch_time=(-1.5, 5),
+    epoch_tmin=-1.5,
+    epoch_tmax=5,
     bad_trials=[],
 ):
     """
@@ -193,7 +235,8 @@ def get_cond_epochs(
     :param raw_eeg:
     :param events:
     :param event_id:
-    :param epoch_time:
+    :param epoch_tmin:
+    :param epoch_tmax:
     :param bad_trials:
     :return:
     """
@@ -201,8 +244,8 @@ def get_cond_epochs(
         raw_eeg,
         events,
         event_id=event_id,
-        tmin=epoch_time[0],
-        tmax=epoch_time[1],
+        tmin=epoch_tmin,
+        tmax=epoch_tmax,
         baseline=None,  # will apply baseline correction after
         verbose=False,
     )
@@ -312,40 +355,26 @@ def get_good_eeg_chan(data: mne.io.Raw) -> list[str]:
 def bad_by_peak_to_peak(data: np.ndarray, sfreq: float, window_secs: float = 1, reject_value: float = 100e-6) -> np.ndarray:
     """
     Identifies potentially bad channels based on median peak-to-peak amplitudes within non-overlapping windows.
-    This function flags channels as potentially bad if their median peak-to-peak amplitude value
-    within non-overlapping windows exceeds a specified rejection threshold. It works as follows:
-
-    1. **Windowing and Peak-to-Peak Calculation:** The function divides the data into windows with a
-       specified width (`window_secs`) and calculates the peak-to-peak amplitude for each window
-       and channel.
-    2. **Median Calculation:** For each channel, it calculates the median of the peak-to-peak amplitudes
-       across all windows.
-    3. **Thresholding:** It compares the median peak-to-peak value for each channel to a specified
-       rejection threshold (`reject_value`). Channels with median peak-to-peak values above this threshold
-       are considered potentially bad.
+    The function segments the EEG data (expected shape: (n_channels, n_timepoints)) into windows of a specified width
+    (`window_secs`) and calculates the median peak-to-peak amplitude for each channel across all windows.
+    Channels exceeding a specified rejection threshold (`reject_value`) in median peak-to-peak amplitude are flagged as
+    potentially bad.
 
     Args:
-        data (np.ndarray): The EEG data, expected to have shape (n_channels, n_timepoints).
+        data (np.ndarray): The EEG data.
         sfreq (float): The sampling frequency of the EEG data in Hz.
         window_secs (float, optional): The width of the non-overlapping windows in seconds (default: 1).
-        reject_value (float, optional): The rejection threshold for median peak-to-peak amplitudes
-            (default: 100e-6).
+        reject_value (float, optional): The rejection threshold for median peak-to-peak amplitudes (default: 100e-6).
 
     Returns:
-        np.ndarray: A boolean NumPy array of shape (n_channels,) indicating potentially bad channels
-            (True for bad channels, False for good channels).
+        np.ndarray: A boolean NumPy array of shape (n_channels,) indicating potentially bad channels (True for bad, False for good).
     """
-    ch_deltas = np.zeros(data.shape[0])
-    sfreq = int(sfreq)
-    window = int(window_secs * sfreq)
-    sum_deltas = np.zeros((data.shape[0], int(data.shape[1] / window)))
-    for ch_idx in range(data.shape[0]):
-        for s in range(int((data.shape[1] / window))):
-            sum_deltas[ch_idx, s] = np.max(data[ch_idx, s * window : (s + 1) * window]) - np.min(
-                data[ch_idx, s * window : (s + 1) * window]
-            )
-        ch_deltas[ch_idx] = np.median(sum_deltas[ch_idx, :])
-    return np.asarray(np.greater(ch_deltas, reject_value))
+    window_samples = int(window_secs * sfreq)
+    n_windows = data.shape[1] // window_samples
+    peak_to_peak = np.ptp(data[:, :n_windows * window_samples].reshape(-1, window_samples), axis=1)
+    median_ptp = np.median(peak_to_peak.reshape(data.shape[0], n_windows), axis=1)
+
+    return median_ptp > reject_value
 
 
 def bad_by_PSD(data: Union[mne.io.BaseRaw, mne.Epochs], fmin: float = 0, fmax: float = np.inf, sd: float = 3) -> np.ndarray:
@@ -373,25 +402,21 @@ def bad_by_PSD(data: Union[mne.io.BaseRaw, mne.Epochs], fmin: float = 0, fmax: f
         - For Epochs objects, it compares each epoch's PSD to the median PSD across epochs for robust outlier detection.
         - Z-scores for PSD values are calculated to standardize comparisons across channels and frequencies.
     """
+    if not isinstance(data, (mne.io.BaseRaw, mne.Epochs)):
+        raise TypeError("data must be an MNE Raw or Epochs object")
+
     if isinstance(data, mne.io.BaseRaw):
         method = "welch"
-        data_size = len(get_good_eeg_chan(data))
-        psd = data.compute_psd(method=method, fmin=fmin, fmax=fmax)
-        log_psd = 10 * np.log10(psd.get_data())
-        zscore_psd = scipy.stats.zscore(log_psd)
-    elif isinstance(data, mne.Epochs):
-        method = "multitaper"
-        data_size = len(data)
-        psd = data.compute_psd(method=method, fmin=fmin, fmax=fmax, adaptive=True)
-        log_psd = 10 * np.log10(psd.get_data())
-        psd_avg = np.median(log_psd, axis=0)
-        zscore_psd = scipy.stats.zscore(np.sum(log_psd - psd_avg, axis=1))
     else:
-        raise TypeError("data need to be a MNE Raw or Epochs object")
-    mask = np.zeros(data_size, dtype=bool)
-    for i in range(len(mask)):
-        mask[i] = any(zscore_psd[i] > sd)
-    return mask
+        method = "multitaper"
+
+    # Efficiently calculate PSD, convert to dB, compute Z-scores across all channels and identify channels > threshold
+    psd = data.compute_psd(method=method, fmin=fmin, fmax=fmax)
+    log_psd = 10 * np.log10(psd.get_data())
+    zscore_psd = scipy.stats.zscore(log_psd, axis=0)
+    bad_channels = np.any(zscore_psd > sd, axis=1)
+
+    return bad_channels
 
 
 def detect_badChan(
@@ -564,6 +589,298 @@ def detect_badChan_by_ransac(epochs, ransac_corr=0.75, sample_prop=0.25):
     return ransac.bad_chs_
 
 
+def bad_epoch_ptp(epochs, reject_value=200e-6):
+    """
+    Identifies bad epochs in an MNE Epochs object based on peak-to-peak (ptp) values.
+
+    Args:
+        epochs (mne.Epochs): The MNE Epochs object containing EEG data.
+        reject_value (float, optional): The threshold for ptp value to be considered a bad epoch. Defaults to 200e-6.
+
+    Returns:
+        ndarray: A boolean array with the same length as the number of epochs,
+                where True indicates a bad epoch based on ptp exceeding the threshold.
+    """
+    epochs_data = epochs.get_data(picks="eeg", return_event_id=False)
+    ptp_values = np.max(epochs_data, axis=2) - np.min(epochs_data, axis=2)
+    bad_epochs = ptp_values > reject_value
+
+    return bad_epochs
+
+def autoreject_badEpoch(
+    epochs,
+    interpolate=True,
+    n_interpolate=np.array([1, 4, 32]),
+    plot_reject=False,
+    Return_reject_log=False,
+):
+    """
+    Apply Autoreject local to drop or interpolate bad sensors. Autoreject is a method data-driven outlier-detection
+    step combined with physics-driven channel repair where all parameters are calibrated using a cross-validation
+    strategy robust to outliers.
+    Note: For the local Autoreject + interpolation it is advised to have around 30 channels or more.
+    :param epochs: (MNE Epoch object)
+    :param interpolate: (bool) If True, Autoreject will be able to interpolate bad epochs.
+    :param plot_reject: (bool) if True, raw bad epochs and reject log will be plotted.
+    :param n_interpolate: (array | None) Bad trials are rejected if present in a lot of channels otherwise the worst
+        'n_interpolate' sensors are interpolated.
+    :param Return_reject_log: (bool) whether to return the reject log instead of the clean epochs or not.
+    :return epochs_clean:
+    """
+    print("Running Autoreject ...")
+    epochs_copy = epochs.copy()
+    ar = AutoReject(n_interpolate=n_interpolate, random_state=11, n_jobs=1, verbose=False)
+    if interpolate:
+        epochs_clean, reject_log = ar.fit_transform(epochs_copy, return_log=True)
+    else:
+        ar.fit(epochs_copy)
+        reject_log = ar.get_reject_log(epochs_copy)
+        epochs_clean = epochs_copy.drop(reject_log.bad_epochs)
+    if plot_reject and reject_log.bad_epochs.any():
+        # epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
+        reject_log.plot("horizontal")  # bug: shows bad channels as well
+    if not reject_log.bad_epochs.any():
+        print("0 bad epochs found")
+    if Return_reject_log:
+        return reject_log.bad_epochs
+    return epochs_clean
+
+
+def reject_badEpoch(
+    data,
+    method="potato",
+    ch_names=None,
+    fmin=None,
+    fmax=None,
+    ptp_reject=150e-6,
+    potato_zscore_thresh=3,
+    local_ar_coeff_mult=3,
+    psd_zscore_thresh=3,
+    global_ar_n_interpolate=np.array([1, 4, 32]),
+    mode=None,
+    chan_weight_dict=None,
+    Return_log=False,
+):
+    """
+    Automatically reject bad epochs based on either the Riemannian Potato algorithm, local autoreject, global
+    autoreject, PSD-based removal algorithm, Artifact Subspace Reconstruction or a combination of these algorithm.
+    Possibility to use the preconfigured mode.
+    todo: add **kwargs for all the parameters.
+
+    :param data: (MNE Epoch object)
+    :param ch_names: (list)
+    :param fmin: The lower frequency of interest.
+    :param fmax: The upper frequency of interest.
+    :param method: (str or list of str) Algorithms selected to detect and remove bad epochs.
+        These can be ['potato', 'local_ar', 'global_ar', 'psd', 'asr']. Note: ASR not implemented yet.
+    :param potato_zscore_thresh: Threshold on z-score of distance to reject artifacts. Only used if ‘potato’ method
+        selected.
+    :param local_ar_coeff_mult: (float) Global rejection threshold multiplier factor. Only used if ‘autoreject’ method
+        selected.
+    :param global_ar_n_interpolate: (array | None) Bad trials are rejected if present in a lot of channels otherwise
+        the worst 'n_interpolate' sensors are interpolated.
+    :param psd_zscore_thresh: Z-score threshold for PSD-based epoch rejection.
+    :param mode: (str | None) Preconfigured mode to optionally use. Available modes:
+        'keepEOG': Reject epochs but keep the EOG artifacts found in frontal channels.
+        'conservative': Reject epochs only if the detected bad epochs belongs to important channels (according to their
+            weight in chan_weight_dict) and important frequency bands (theta, alpha and beta waves usually contains a
+            better brain activity to noise ratio than delta and gamma).
+    :param chan_weight_dict (dict | None) Dictionary with the name of the channels in key and their importance weight
+        in value.
+    :param Return_log: (bool) If True, return a dictionary whose keys are the rejection method and the values are
+        the epoch numbers detected as bad.
+    :return epochs: (MNE Epoch object) epochs cleaned
+    """
+    assert isinstance(Return_log, bool)
+    if not isinstance(method, list):
+        method = [method]
+    if not all(item in ["ptp", "potato", "local_ar", "global_ar", "asr", "psd"] for item in method):
+        raise ValueError("input 'method' invalid")
+    elif method == "asr":
+        raise ValueError("method 'asr' not available yet")
+    assert local_ar_coeff_mult > 0
+    assert psd_zscore_thresh > 0
+    epochs = data.copy().pick("eeg")
+    if mode not in ["keepEOG", "conservative", "pre_ica", None]:
+        raise ValueError("mode not recognised")
+    elif mode in ["conservative"]:
+        if not chan_weight_dict:
+            chan_weight_dict = auto_weight_chan_dict(epochs.pick("eeg").ch_names)
+            ch_names = [chan for chan, val in chan_weight_dict.items() if val == 2]
+        elif isinstance(chan_weight_dict, dict):
+            ch_names = [chan for chan, val in chan_weight_dict.items() if val == 2]
+            if not ch_names:
+                raise ValueError("'chan_weight_dict' does not contains channel with a value of 2.")
+            if not set(ch_names).issubset(epochs.ch_names):
+                raise ValueError(
+                    "Channels from input 'chan_weight_dict' need to match names with channels in input "
+                    "epoch object"
+                )
+        else:
+            raise ValueError("Input 'chan_weight_dict' need to be None or dict.")
+    original_rej = epochs.drop_log.count(("USER",))
+    if mode == "keepEOG":
+        config = {
+            "keepEOG": {
+                "ch_names": [
+                    ch for ch in epochs.ch_names if ch.startswith("F") or ch.startswith("AF")
+                ],
+                "low_freq": 15,
+                "high_freq": fmax,
+                # 'cov_normalization': 'trace'  # trace-norm to be insensitive to power
+            }
+        }
+    elif mode == "conservative":
+        config = {
+            "conservative": {
+                "ch_names": ch_names,
+                "low_freq": 3,
+                "high_freq": 31,
+            }
+        }
+    elif mode == "pre_ica":
+        config = {
+            "pre_ica": {
+                "ch_names": ch_names,
+                "low_freq": 15,
+                "high_freq": fmax,
+            }
+        }
+    else:
+        config = {
+            "user_config": {
+                "ch_names": ch_names,
+                "low_freq": fmin,
+                "high_freq": fmax,
+            }
+        }
+    potato = None
+    if "potato" in method:
+        potato = Potato(threshold=potato_zscore_thresh)
+
+    dict_mask = {}
+    bad_epochs = []
+    mask = None
+    # If peak-to-peak rejection is present, do it first
+    if "ptp" in method:
+        for k, v in config.items():
+            config_epochs = epochs.copy().filter(
+                v["low_freq"], v["high_freq"], v["ch_names"], verbose="ERROR"
+            )
+            mask = bad_epoch_ptp(config_epochs, reject_value=ptp_reject)
+            dict_mask[f"ptp_{k}"] = mask
+        final_mask = np.zeros(len(epochs.selection), dtype=bool)
+        for k, m in dict_mask.items():
+            final_mask = final_mask | m
+        epochs.drop(final_mask)
+    for k, v in config.items():
+        config_epochs = epochs.copy().filter(
+            v["low_freq"], v["high_freq"], v["ch_names"], verbose="ERROR"
+        )
+        for m in method:
+            if m == "ptp":
+                pass
+            if m == "potato":
+                cov_mats_ = Covariances(estimator="scm").fit_transform(
+                    config_epochs.get_data(copy=True)
+                )
+                # if v.get('cov_normalization'):
+                #     cov_mats_ = normalize(cov_mats_, v.get('cov_normalization'))
+                try:
+                    potato.fit(cov_mats_)
+                    mask = np.invert(potato.predict(cov_mats_).astype(bool))
+                except ValueError as e:
+                    warnings.warn(
+                        f"ValueError: {e}. \nEstimating a second time with shrunk Ledoit-Wolf covariance "
+                        f"matrices for regularization ..."
+                    )
+                    cov_mats_ = Covariances(estimator="lwf").fit_transform(
+                        config_epochs.get_data(copy=True)
+                    )
+                    try:
+                        potato.fit(cov_mats_)
+                        mask = np.invert(potato.predict(cov_mats_).astype(bool))
+                    except ValueError as e:
+                        warnings.warn(
+                            f"ValueError: {e}. \nEstimating a third time with oracle approximating shrunk covariance "
+                            f"matrices for regularization ..."
+                        )
+                        cov_mats_ = Covariances(estimator="oas").fit_transform(
+                            config_epochs.get_data(copy=True)
+                        )
+                        try:
+                            potato.fit(cov_mats_)
+                            mask = np.invert(potato.predict(cov_mats_).astype(bool))
+                        except ValueError as e:
+                            warnings.warn(
+                                f"ValueError: {e}. \nPotato rejection will be skipped."
+                            )
+                            mask = np.zeros(len(config_epochs.selection), dtype=bool)
+            if m == "global_ar":
+                reject_thresh = {
+                    "eeg": get_rejection_threshold(config_epochs, ch_types="eeg", cv=5)["eeg"]
+                    * local_ar_coeff_mult
+                }
+                print(f"The rejection threshold is {reject_thresh}")
+                rpf_epochs_reshape_ = np.reshape(
+                    config_epochs.get_data(copy=True), (len(config_epochs.selection), -1)
+                )
+                mask = np.zeros(len(config_epochs.selection), dtype=bool)
+                for i in range(len(mask)):
+                    mask[i] = any(rpf_epochs_reshape_[i] > reject_thresh["eeg"])
+            if m == "local_ar":
+                mask = autoreject_badEpoch(
+                    config_epochs,
+                    interpolate=False,
+                    n_interpolate=global_ar_n_interpolate,
+                    plot_reject=False,
+                    Return_reject_log=True,
+                )
+            if m == "psd":
+                if not v["high_freq"]:
+                    if not config_epochs.info["lowpass"]:
+                        fmax = np.inf
+                    else:
+                        fmax = config_epochs.info["lowpass"]
+                else:
+                    fmax = v["high_freq"]
+                if not v["low_freq"]:
+                    if not config_epochs.info["highpass"]:
+                        fmin = 0
+                    else:
+                        fmin = config_epochs.info["highpass"]
+                else:
+                    fmin = v["low_freq"]
+                mask = bad_by_PSD(config_epochs, fmin=fmin, fmax=fmax, sd=psd_zscore_thresh)
+
+            dict_mask[f"{m}_{k}"] = mask
+            print(
+                f'{dict_mask[f"{m}_{k}"].sum()} bad epochs found by method {m} for configuration {k}'
+            )
+            bad_epochs.append(np.asarray(dict_mask[f"{m}_{k}"]))
+
+    final_mask = np.zeros(len(epochs.selection), dtype=bool)
+    for k, m in dict_mask.items():
+        if not k.startswith("ptp"):
+            final_mask = final_mask | m
+
+    epochs.drop(final_mask)
+    print(
+        f"Total = {epochs.drop_log.count(('USER',)) - original_rej} bad epochs found by methods: {method}"
+    )
+
+    if Return_log:
+        log_dict = {}
+        for method, mask in dict_mask.items():
+            method_name, config = method.split("_", 1)[0], method.split("_", 1)[1]
+            if method_name not in log_dict.keys():
+                log_dict[method_name] = {}
+            log_dict[method_name][config] = np.where(mask)[0]
+        return epochs, log_dict
+
+    return epochs
+
+
 def perform_ica(eeg_data, plot_topo=False, topo_saveas=None, return_sources=False, ic_min_var=0.01):
     """
     Perform Independent Component Analysis + automatically remove artifact with ICLabel
@@ -658,7 +975,8 @@ def offline_preprocess(
     data_repo="../data",
     l_freq=0.1,
     h_freq=50,
-    epoch_time=(-1.5, 0),
+    epoch_duration=5,
+    epoch_baseline=(-1.5,0),
     sfreq=512,
     doICA="after_epoching",
     work_on_sources=False,
@@ -674,7 +992,9 @@ def offline_preprocess(
     :param data_repo:
     :param l_freq:
     :param h_freq:
-    :param epoch_time:
+    :param epoch_duration:
+    :param epoch_baseline:
+    :param sfreq:
     :param doICA:
     :param work_on_sources:
     :param bad_trials:
@@ -704,13 +1024,9 @@ def offline_preprocess(
     raw_eeg.info["bads"], chan_drop_log = detect_badChan(
         raw_eeg, l_freq, h_freq, keepEOG=True, Return_log=True
     )
-    if raw_eeg.info["bads"]:
-        raw_eeg = raw_eeg.interpolate_bads(reset_bads=True)
 
-    raw_eeg.set_eeg_reference(ref_channels="average", ch_type="auto")
-
-    if doICA == "before_epoching":
-        raw_eeg = perform_ica(raw_eeg, return_sources=work_on_sources)
+    # if doICA == "before_epoching":
+    #     raw_eeg = perform_ica(raw_eeg, return_sources=work_on_sources)
 
     # Annotate according to events.csv markers time stamps
     raw_eeg, events = annotate_by_markers(raw_eeg, subject, events_csv, me_event_id, mi_event_id)
@@ -722,10 +1038,15 @@ def offline_preprocess(
             raw_eeg,
             events,
             event_id,
-            epoch_time=epoch_time,
+            epoch_tmin=epoch_baseline[0],
+            epoch_tmax=epoch_duration,
             bad_trials=list_bad_trials,
         )
-        epochs.load_data()
+
+        raw_eeg.set_eeg_reference(ref_channels=['M1', 'M2'])
+        if raw_eeg.info["bads"]:
+            raw_eeg = raw_eeg.interpolate_bads(reset_bads=True)
+
         if doICA == "after_epoching":
             topo_path = None
             if save_prepro_repo and work_on_sources:
@@ -735,15 +1056,27 @@ def offline_preprocess(
                     pass
                 topo_path = (
                     f"{save_prepro_repo}/ics_sources/sources_topo_{subject}_{experiment}_"
-                    f"{cond_dict[event_id]}_filt({l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_"
+                    f"{cond_dict[event_id]}_filt({l_freq}_{h_freq})_basl{epoch_baseline}_"
                     f"ICA{doICA}.png"
                 )
             epochs = perform_ica(epochs, return_sources=work_on_sources, topo_saveas=topo_path)
+
         # Baseline removal
-        epochs.apply_baseline()
-        # Automatic epoch rejection using Autoreject
-        reject_dict = get_rejection_threshold(epochs, decim=1)
-        epochs.drop_bad(reject=reject_dict)
+        epochs.apply_baseline(epoch_baseline)
+
+        epochs = reject_badEpoch(
+            epochs,
+            fmin=1,
+            fmax=h_freq,
+            method=["potato"],
+        )
+        epochs = reject_badEpoch(
+            epochs,
+            fmin=1,
+            fmax=h_freq,
+            method=["psd"],
+            mode="conservative",
+        )
 
         if save_prepro_repo:
             prefix = "prepro"
@@ -757,15 +1090,15 @@ def offline_preprocess(
                 pass
             prepro_file_path = (
                 f"{prepro_repo}{prefix}_{subject}_{experiment}_{cond_dict[event_id]}_filt("
-                f"{l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.fif"
+                f"{l_freq}_{h_freq})_basl{epoch_baseline}_ICA{doICA}.fif"
             )
             erptopo_path = (
                 f"{prepro_repo}{prefix}_{subject}_{experiment}_{cond_dict[event_id]}_filt("
-                f"{l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.png"
+                f"{l_freq}_{h_freq})_basl{epoch_baseline}_ICA{doICA}.png"
             )
             topo_path = (
                 f"{prepro_repo}{prefix}_topo_{subject}_{experiment}_{cond_dict[event_id]}_filt"
-                f"({l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.png"
+                f"({l_freq}_{h_freq})_basl{epoch_baseline}_ICA{doICA}.png"
             )
             if not work_on_sources:
                 evoked = epochs.average()

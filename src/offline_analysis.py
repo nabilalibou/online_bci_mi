@@ -15,7 +15,7 @@ mne.viz.set_browser_backend("qt")
 
 # =============== Constants ===============
 # Preprocessing parameters
-doPrepro = False
+doPrepro = True
 data_repo = "../data"
 save_prepro = f"../results/data_preprocessed/"
 subjects = ["na", "mp"]  # "na", "mp"
@@ -25,12 +25,13 @@ l_freq, h_freq = 2, 50
 sfreq = 512
 doICA = "before_epoching"  # 'before_epoching'  'after_epoching'  None
 work_on_sources = False  # if True, save ICs sources and their topomaps for each conditions
-epoch_time = (-1.5, 5)  # (-1, 0)
+epoch_duration = 5
+epoch_baseline = (-1.5, 0)  # (-1, 0)
 bad_trials = get_reported_bad_trials()  # Trials reported as wrong by the subjects
 data_path_suffix = (
     f"subj_({'_'.join(subjects)})_exp_({'_'.join(experiments)})_({'_'.join(paradigm)})"
 )
-prepro_path_suffix = f"filt({l_freq}_{h_freq})_basl{(epoch_time[0], 0)}_ICA{doICA}.pkl"
+prepro_path_suffix = f"filt({l_freq}_{h_freq})_basl{epoch_baseline}_ICA{doICA}.pkl"
 
 # Classification parameters
 eval_mode = "intra"  # 'inter'  'intra'
@@ -86,7 +87,8 @@ for subj in subjects:
                 data_repo=data_repo,
                 l_freq=l_freq,
                 h_freq=h_freq,
-                epoch_time=epoch_time,
+                epoch_duration=epoch_duration,
+                epoch_baseline=epoch_baseline,
                 sfreq=sfreq,
                 doICA=doICA,
                 work_on_sources=work_on_sources,
@@ -110,7 +112,7 @@ for subj in subjects:
                 except FileNotFoundError as e:
                     raise FileNotFoundError(e)
                 epoch_events = epochs.events[:, 2]
-                X = epochs.get_data(picks="eeg", tmin=epoch_time[0])
+                X = epochs.get_data(picks="eeg")
                 y = np.full(len(epoch_events), count)
                 data_dict[f"{subj}"][f"{exp}_{task}"]["X"] = get_features(
                     X, features_list=features_list, sfreq=sfreq, funcs_params=funcs_params
