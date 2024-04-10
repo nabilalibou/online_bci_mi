@@ -223,22 +223,32 @@ def map_chan_type(raw_eeg):
 
 
 def get_cond_epochs(
-    raw_eeg,
-    events,
-    event_id,
-    epoch_tmin=-1.5,
-    epoch_tmax=5,
-    bad_trials=[],
-):
+    raw_eeg: mne.io.Raw,
+    events: np.ndarray,
+    event_id: int,
+    epoch_tmin: float = -1.5,
+    epoch_tmax: float = 5.0,
+    bad_trials: list[int] = [],
+) -> mne.Epochs:
     """
-    Cut raw eeg signal into epochs and return them cleaned using input 'bad_trials'
-    :param raw_eeg:
-    :param events:
-    :param event_id:
-    :param epoch_tmin:
-    :param epoch_tmax:
-    :param bad_trials:
-    :return:
+    Creates condition-specific epochs from a raw EEG signal and event markers.
+    This function extracts epochs around events with the specified `event_id` from the provided
+    raw EEG data (`raw_eeg`) and event markers (`events`). Bad trials listed in `bad_trials`
+    are excluded before returning the cleaned epochs.
+
+    Args:
+        raw_eeg (mne.io.Raw): The raw EEG data.
+        events (np.ndarray): A NumPy array of event markers with time stamps.
+        event_id (int): The event ID to extract epochs for.
+        epoch_tmin (float, optional): The minimum time in seconds before the event
+            to include in the epoch (default: -1.5).
+        epoch_tmax (float, optional): The maximum time in seconds after the event
+            to include in the epoch (default: 5.0).
+        bad_trials (list[int], optional): A list of trial indices (starting from 1)
+            to be excluded due to bad data (default: []).
+
+    Returns:
+        mne.Epochs: The condition-specific epochs object.
     """
     epochs = mne.Epochs(
         raw_eeg,
@@ -246,13 +256,15 @@ def get_cond_epochs(
         event_id=event_id,
         tmin=epoch_tmin,
         tmax=epoch_tmax,
-        baseline=None,  # will apply baseline correction after
+        baseline=None,  # Baseline correction can be applied later
         verbose=False,
     )
+
     if bad_trials:
-        idx_torem = np.array(bad_trials) - 1
-        epochs.drop(idx_torem)
-        print(f"dropped epochs corresponding to trials: {idx_torem}")
+        # Convert trial indices to epoch indices (starting from 0)
+        epochs = epochs.drop(np.array(bad_trials) - 1)
+        print(f"Dropped epochs corresponding to trials: {bad_trials}")
+
     return epochs
 
 
@@ -607,89 +619,116 @@ def bad_epoch_ptp(epochs, reject_value=200e-6):
 
     return bad_epochs
 
-def autoreject_badEpoch(
-    epochs,
-    interpolate=True,
-    n_interpolate=np.array([1, 4, 32]),
-    plot_reject=False,
-    Return_reject_log=False,
-):
+
+def autoreject_bad_epochs(
+    epochs: mne.Epochs,
+    interpolate: bool = True,
+    n_interpolate: np.ndarray = np.array([1, 4, 32]),
+    plot_reject: bool = False,
+    Return_reject_log: bool = False,
+) -> Union[mne.Epochs, np.ndarray]:
     """
-    Apply Autoreject local to drop or interpolate bad sensors. Autoreject is a method data-driven outlier-detection
-    step combined with physics-driven channel repair where all parameters are calibrated using a cross-validation
-    strategy robust to outliers.
-    Note: For the local Autoreject + interpolation it is advised to have around 30 channels or more.
-    :param epochs: (MNE Epoch object)
-    :param interpolate: (bool) If True, Autoreject will be able to interpolate bad epochs.
-    :param plot_reject: (bool) if True, raw bad epochs and reject log will be plotted.
-    :param n_interpolate: (array | None) Bad trials are rejected if present in a lot of channels otherwise the worst
-        'n_interpolate' sensors are interpolated.
-    :param Return_reject_log: (bool) whether to return the reject log instead of the clean epochs or not.
-    :return epochs_clean:
+    Applies Autoreject for local bad sensor detection and handling.
+    Autoreject is a data-driven outlier-detection method combined with physics-driven
+    channel repair, where parameters are calibrated using a cross-validation strategy
+    robust to outliers.
+
+    **Note:** Local Autoreject with interpolation is recommended for at least 30 channels.
+
+    Args:
+        epochs (Epochs): The MNE Epochs object to clean.
+        interpolate (bool, optional): If True, bad sensors will be interpolated
+            (default: True).
+        n_interpolate (np.ndarray, optional): The number of worst channels to
+            interpolate in case of bad trials (default: [1, 4, 32]).
+        plot_reject (bool, optional): If True, plots raw bad epochs and reject log
+            (default: False).
+        return_reject_log (bool, optional): If True, returns the reject log instead
+            of the cleaned epochs (default: False).
+
+    Returns:
+        Union[Epochs, np.ndarray]: The cleaned epochs (default) or the reject log
+            as a NumPy array if `return_reject_log` is True.
     """
-    print("Running Autoreject ...")
+    print("Running Autoreject...")
     epochs_copy = epochs.copy()
     ar = AutoReject(n_interpolate=n_interpolate, random_state=11, n_jobs=1, verbose=False)
+
     if interpolate:
         epochs_clean, reject_log = ar.fit_transform(epochs_copy, return_log=True)
     else:
         ar.fit(epochs_copy)
         reject_log = ar.get_reject_log(epochs_copy)
-        epochs_clean = epochs_copy.drop(reject_log.bad_epochs)
+        epochs_clean = epochs.drop(reject_log.bad_epochs)
+
+    # Handle plotting logic and potential errors
     if plot_reject and reject_log.bad_epochs.any():
-        # epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
-        reject_log.plot("horizontal")  # bug: shows bad channels as well
+        try:
+            # Attempt to plot epochs with scalings
+            epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
+        except (AttributeError, ValueError):
+            # Catch potential errors related to plotting (e.g., missing scalings argument)
+            print("Error occurred during plotting. Consider adjusting plot parameters.")
+        reject_log.plot("horizontal")  # May still show bad channels
+
     if not reject_log.bad_epochs.any():
         print("0 bad epochs found")
-    if Return_reject_log:
-        return reject_log.bad_epochs
-    return epochs_clean
+
+    return reject_log.bad_epochs if Return_reject_log else epochs_clean
 
 
 def reject_badEpoch(
-    data,
-    method="potato",
-    ch_names=None,
-    fmin=None,
-    fmax=None,
-    ptp_reject=150e-6,
-    potato_zscore_thresh=3,
-    local_ar_coeff_mult=3,
-    psd_zscore_thresh=3,
-    global_ar_n_interpolate=np.array([1, 4, 32]),
-    mode=None,
-    chan_weight_dict=None,
-    Return_log=False,
-):
+    data: mne.Epochs,
+    method: list[str] = ["potato", "local_ar"],
+    ch_names: list[str] = None,
+    fmin: float = None,
+    fmax: float = None,
+    ptp_reject: float = 150e-6,
+    potato_zscore_thresh: float = 3.0,
+    local_ar_coeff_mult: float = 3.0,
+    psd_zscore_thresh: float = 3.0,
+    global_ar_n_interpolate: np.ndarray = np.array([1, 4, 32]),
+    mode: str = None,
+    chan_weight_dict: dict[str, float] = None,
+    Return_log: bool = False,
+) -> Union[mne.Epochs, tuple[mne.Epochs, dict]]:
     """
-    Automatically reject bad epochs based on either the Riemannian Potato algorithm, local autoreject, global
-    autoreject, PSD-based removal algorithm, Artifact Subspace Reconstruction or a combination of these algorithm.
-    Possibility to use the preconfigured mode.
+    Automatically rejects bad epochs based on a combination of algorithms.
+    This function rejects bad epochs from the provided MNE Epochs object (`data`)
+    using the specified rejection methods (`method`).  Channe selection (`ch_names`),
+    frequency bands of interest (`fmin`, `fmax`), and various parameters for each
+    rejection method can be customized.
     todo: add **kwargs for all the parameters.
 
-    :param data: (MNE Epoch object)
-    :param ch_names: (list)
-    :param fmin: The lower frequency of interest.
-    :param fmax: The upper frequency of interest.
-    :param method: (str or list of str) Algorithms selected to detect and remove bad epochs.
-        These can be ['potato', 'local_ar', 'global_ar', 'psd', 'asr']. Note: ASR not implemented yet.
-    :param potato_zscore_thresh: Threshold on z-score of distance to reject artifacts. Only used if ‘potato’ method
-        selected.
-    :param local_ar_coeff_mult: (float) Global rejection threshold multiplier factor. Only used if ‘autoreject’ method
-        selected.
-    :param global_ar_n_interpolate: (array | None) Bad trials are rejected if present in a lot of channels otherwise
-        the worst 'n_interpolate' sensors are interpolated.
-    :param psd_zscore_thresh: Z-score threshold for PSD-based epoch rejection.
-    :param mode: (str | None) Preconfigured mode to optionally use. Available modes:
-        'keepEOG': Reject epochs but keep the EOG artifacts found in frontal channels.
-        'conservative': Reject epochs only if the detected bad epochs belongs to important channels (according to their
-            weight in chan_weight_dict) and important frequency bands (theta, alpha and beta waves usually contains a
-            better brain activity to noise ratio than delta and gamma).
-    :param chan_weight_dict (dict | None) Dictionary with the name of the channels in key and their importance weight
-        in value.
-    :param Return_log: (bool) If True, return a dictionary whose keys are the rejection method and the values are
-        the epoch numbers detected as bad.
-    :return epochs: (MNE Epoch object) epochs cleaned
+    Args:
+        data (Epochs): The MNE Epochs object containing EEG data.
+        method (list[str], optional): A list of rejection methods to apply.
+            Available options include: "potato", "local_ar", "global_ar", "psd"
+            (default: ["potato", "local_ar"]).
+        ch_names (list[str], optional): A list of channel names to focus on
+            during rejection (default: None, all channels used).
+        fmin (float, optional): The lower frequency of interest in Hz (default: None).
+        fmax (float, optional): The upper frequency of interest in Hz (default: None).
+        ptp_reject (float, optional): Peak-to-peak rejection threshold (default: 150e-6).
+        potato_zscore_thresh (float, optional): Z-score threshold for Potato
+            rejection (default: 3.0).
+        local_ar_coeff_mult (float, optional): Coefficient multiplier for local AR
+            rejection threshold (default: 3.0).
+        psd_zscore_thresh (float, optional): Z-score threshold for PSD-based
+            rejection (default: 3.0).
+        global_ar_n_interpolate (np.ndarray, optional): Parameters for global AR
+            rejection: number of worst channels to interpolate (default: [1, 4, 32]).
+        mode (str, optional): Pre-configured rejection mode (e.g., "conservative",
+            "keepEOG") (default: None).
+        chan_weight_dict (dict[str, float], optional): Dictionary with channel
+            names as keys and importance weights as values (default: None).
+        Return_log (bool, optional): If True, returns a dictionary with bad epoch
+            indices for each method and configuration (default: False).
+
+    Returns:
+        Union[Epochs, tuple[Epochs, dict]]: The cleaned epochs object, or a
+            tuple containing the cleaned epochs and a dictionary with bad epoch
+            logs (if `return_log` is True).
     """
     assert isinstance(Return_log, bool)
     if not isinstance(method, list):
@@ -829,7 +868,7 @@ def reject_badEpoch(
                 for i in range(len(mask)):
                     mask[i] = any(rpf_epochs_reshape_[i] > reject_thresh["eeg"])
             if m == "local_ar":
-                mask = autoreject_badEpoch(
+                mask = autoreject_bad_epochs(
                     config_epochs,
                     interpolate=False,
                     n_interpolate=global_ar_n_interpolate,
@@ -881,20 +920,61 @@ def reject_badEpoch(
     return epochs
 
 
-def perform_ica(eeg_data, plot_topo=False, topo_saveas=None, return_sources=False, ic_min_var=0.01):
+def perform_ica(
+    eeg_data: Union[mne.Epochs, mne.io.Raw],
+    nbr_ics: int = None,
+    ic_min_var: float = 0.01,
+    proba_thresh: float = 0.7,
+    return_sources: bool = False,
+    plot_topo: bool = False,
+    topo_saveas: str = None,
+    Return_log: bool = False,
+) -> Union[mne.Epochs, mne.io.Raw, tuple[Union[mne.Epochs, mne.io.Raw], dict]]:
     """
-    Perform Independent Component Analysis + automatically remove artifact with ICLabel
-    :param eeg_data:
-    :param plot_topo:
-    :param topo_saveas:
-    :param return_sources:
-    :param ic_min_var:
-    :return:
+    Performs Independent Component Analysis (ICA) and removes artifact components
+    using ICLabel classification.
+    This function performs ICA on the provided MNE data (`eeg_data`). It then uses
+    ICLabel to classify the independent components (ICs) and removes those exceeding
+    a specified probability threshold of being artifacts. Optionally, EOG channels
+    can be used to aid in EOG IC detection.
+
+    Args:
+        eeg_data (Union[Epochs, Raw]): The MNE Epochs or Raw data object.
+        nbr_ics (int, optional): The number of ICA components to compute. If None,
+            defaults to the number of good EEG channels (default: None).
+        ic_min_var (float, optional): Minimum variance ratio threshold for keeping
+            an IC (default: 0.01).
+        proba_thresh (float, optional): Probability threshold for ICLabel
+            classification (default: 0.7). Must be between 0 and 1.
+        return_sources (bool, optional): If True, returns the estimated ICA sources
+            (default: False).
+        plot_topo (bool, optional): If True, plots the topographies of all ICs
+            (default: False).
+        topo_saveas (str, optional): Path to save the topographies plot as a PNG
+            image (default: None).
+        Return_log (bool, optional): If True, returns a dictionary with information
+            about kept ICs and explained variance (default: False).
+
+    Returns:
+        Union[Epochs, Raw, tuple[Union[Epochs, Raw], dict]]: The cleaned data object,
+            or a tuple containing the cleaned data and a dictionary with ICA
+            processing information (if `return_log` is True).
+
+    Raises:
+        ValueError: If `proba_thresh` is not between 0 and 1.
+        ValueError: If `topo_saveas` path does not end with the '.png' extension.
+        ValueError: If EOG ICs detected by ICLabel and MNE differ (when EOG channels
+            are present).
     """
-    nbr_ics = 15
-    ica = mne.preprocessing.ICA(n_components=15, method="picard", max_iter="auto", random_state=97)
+    if proba_thresh < 0 or proba_thresh > 1:
+        raise ValueError("proba_thresh must be between 0 and 1")
+    ica = mne.preprocessing.ICA(
+        n_components=nbr_ics, method="picard", max_iter="auto", random_state=97
+    )
     ica.fit(eeg_data)
     all_explained_var_ratio = ica.get_explained_variance_ratio(eeg_data, ch_type="eeg")
+    if not nbr_ics:
+        nbr_ics = len(get_good_eeg_chan(eeg_data))
     print(
         f"Fraction of variance explained by all the {nbr_ics} components: "
         f"{round(100 * all_explained_var_ratio['eeg'], 3)}%"
@@ -910,43 +990,31 @@ def perform_ica(eeg_data, plot_topo=False, topo_saveas=None, return_sources=Fals
             topo_fig.savefig(topo_saveas, format=path_ext.split(".")[1], bbox_inches="tight")
         except FileNotFoundError as e:
             raise FileNotFoundError(f"{e}")
-
-    # Check-up with mne find_bads_eog()
     eog_indices = []
     if "eog" in eeg_data.get_channel_types():
         ica.exclude = []
-        # find which ICs match the EOG pattern
-        eog_indices, eog_scores = ica.find_bads_eog(eeg_data)
-        # # eog_indices, eog_scores = ica.find_bads_eog(raw_eeg, ch_name='Fpz')
-        # ica.exclude = eog_indices
-
-        # # barplot of ICA component "EOG match" scores
-        # ica.plot_scores(eog_scores)
-        #
-        # # plot diagnostics
-        # ica.plot_properties(raw_eeg, picks=eog_indices)
-        #
-        # # plot ICs applied to raw data, with EOG matches highlighted
-        # ica.plot_sources(raw_eeg, show_scrollbars=False)
+        eog_indices, eog_scores = ica.find_bads_eog(eeg_data)  # detect eog ics
 
     # ICLabel classification of the IC components:
     ic_labels = mne_icalabel.label_components(eeg_data, ica, method="iclabel")
     labels = ic_labels["labels"]
 
     if "eog" in eeg_data.get_channel_types() and (ica.labels_["eog"] != eog_indices):
-        raise ValueError("EOG ICs found by ICLabel and 'find_bads_eog' are different")
-
+        raise ValueError("EOG ICs found by ICLabel and MNE 'find_bads_eog' are different")
+    ica_logs = {"ics_kept": 0, "var_kept": 0}
     exclude_dict = {}
     for idx, label in enumerate(labels):
-        if label not in ["brain", "other"] and ic_labels["y_pred_proba"][idx] > 0.8:
+        if label not in ["brain", "other"] and ic_labels["y_pred_proba"][idx] > proba_thresh:
             exclude_dict[idx] = {
                 "label": label,
                 "proba": ic_labels["y_pred_proba"][idx],
             }
+        else:
+            ica_logs["ics_kept"] += 1
     print(f"Excluding these ICA components:")
     for idx, val in exclude_dict.items():
         round_proba = round(int(100 * val["proba"]), 2)
-        print(f"Component n°{idx} '{val['label']}' (probability: {round_proba}%)")
+        print(f"Component n°{idx + 1} '{val['label']}' (probability: {round_proba}%)")
     print("Fraction of variance in EEG signal explained by the components that has been kept:")
     minor_brain_ics = []
     for i, ic in enumerate(ic_labels["labels"]):
@@ -958,15 +1026,21 @@ def perform_ica(eeg_data, plot_topo=False, topo_saveas=None, return_sources=Fals
                 minor_brain_ics.append(i)
             round_proba = int(100 * ic_labels["y_pred_proba"][i])
             round_var = 100 * explained_var_ratio["eeg"]
+            ica_logs["var_kept"] += round_var
             print(
-                "Component n°{} '{}' ({}%): {:.1f}%".format(i, ic, round_proba, round_var)
+                "Component n°{} '{}' ({}%): {:.1f}%".format(i + 1, ic, round_proba, round_var)
             )  # f"{}" cannot round
     # ica.plot_properties(raw_eeg, picks=kept_ics, verbose=False)
+    ica_logs["var_kept"] = round(ica_logs["var_kept"], 1)
+    ica.apply(eeg_data, exclude=list(exclude_dict.keys()))
     if return_sources:
         ica.exclude.extend(minor_brain_ics)  # only keep the main sources to work on them
+        if Return_log:
+            return ica.get_sources(eeg_data), ica_logs
         return ica.get_sources(eeg_data)
-    else:
-        return ica.apply(eeg_data, exclude=list(exclude_dict.keys()))
+    if Return_log:
+        return eeg_data, ica_logs
+    return eeg_data
 
 
 def offline_preprocess(
