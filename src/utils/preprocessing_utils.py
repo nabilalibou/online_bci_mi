@@ -4,7 +4,7 @@ import os
 import warnings
 import mne
 import csv
-from typing import Union
+from typing import Union, Optional
 from pathlib import Path
 import numpy as np
 import mne_icalabel
@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 # matplotlib.use('TkAgg')
 # print(plt.get_backend())
 # plt.switch_backend("Qt5Agg")
-mne.viz.set_browser_backend("qt")
+# mne.viz.set_browser_backend("qt")
 
 
 # Butterworth Bandpass Filter
@@ -194,32 +194,71 @@ def get_reported_bad_trials():
     return bad_trials_dict
 
 
-def map_chan_type(raw_eeg):
+def fix_montage_eeg(
+    data: Union[mne.io.Raw, mne.Epochs],
+    ref_chan: str = "",
+    montage_ref: str = None,
+    head_size: float = 0.095,
+) -> Union[mne.io.Raw, mne.Epochs]:
     """
-    Returns a dictionary mapping channel names to MNE channel types.
+    Corrects channel names, assigns standard MNE channel types,
+    and sets a specified montage (optional) for an MNE data object.
+    This function takes an MNE Raw or Epochs object (`data`), optionally removes
+    a reference channel name from channel names (`ref_chan`), assigns standard MNE
+    channel types (`eeg`, `eog`, `misc`, `stim`) based on heuristics, and sets a
+    standard or custom montage (`montage_ref`) with a specified head size
+    (`head_size`).
+
     Args:
-        raw_eeg (mne.io.Raw): An MNE Raw object containing EEG data.
+        data (Union[mne.io.Raw, mne.Epochs]): The MNE Raw or Epochs data object.
+        ref_chan (str, optional): The reference channel name to remove from channel
+            names (default: None).
+        montage_ref (str, optional): The name of the standard montage to use
+            (e.g., "biosemi-64-channel") or the path to a custom montage file
+            (default: "").
+        head_size (float, optional): The head size in meters to use for standard
+            montage construction (default: 0.095).
+
     Returns:
-        dict: A dictionary mapping channel names to corresponding MNE channel types (eog, stim, eeg, or misc).
-    Raises:
-        ValueError: If a channel name doesn't match any of the defined patterns.
+        Union[mne.io.Raw, mne.Epochs]: The modified data object with corrected channels
+            and optionally the specified montage.
     """
-    chan_names = raw_eeg.ch_names
-    mapping_type = {}
-    for i in range(0, len(chan_names)):
-        if "EOG" in chan_names[i]:
-            mapping_type[chan_names[i]] = "eog"
-        elif (
-            "STATUS" in chan_names[i]
-            or "TRIGGERS" in chan_names[i]
-            or "Counter 2power24" in chan_names[i]
+    data_ = data.copy()
+    original_channel_names = data_.ch_names
+    new_channel_names = [
+        name.replace(f"-{ref_chan}", "") if ref_chan else name
+        for name in original_channel_names
+    ]
+    channel_name_mapping = {}
+    channel_type_mapping = {}
+    for name in new_channel_names:
+        channel_name_mapping[name] = name
+        if ref_chan and ref_chan in name:
+            channel_type_mapping[name] = "misc"
+        elif "EOG" in name:
+            channel_type_mapping[name] = "eog"
+        elif any(
+            term in name
+            for term in ("STATUS", "TRIGGERS", "Counter 2power24")
         ):
-            mapping_type[chan_names[i]] = "stim"
-        elif "M1" in chan_names[i] or "M2" in chan_names[i]:
-            mapping_type[chan_names[i]] = "misc"
+            channel_type_mapping[name] = "stim"
+        elif any(term in name for term in ("M1", "M2")):
+            channel_type_mapping[name] = "misc"
         else:
-            mapping_type[chan_names[i]] = "eeg"
-    return mapping_type
+            channel_type_mapping[name] = "eeg"
+    allow_duplicates = False
+    if len(data_.ch_names) != len(np.unique(data_.ch_names)) and not allow_duplicates:
+        raise ValueError("New channel names are not unique, renaming failed")
+    mne.rename_channels(data_.info, channel_name_mapping, allow_duplicates=True)
+    data_.set_channel_types(channel_type_mapping)
+    if montage_ref:
+        try:
+            montage = mne.channels.make_standard_montage(montage_ref, head_size=head_size)
+        except ValueError:
+            montage = mne.channels.read_custom_montage(montage_ref, head_size=head_size)
+        data_.set_montage(montage, match_case=False)
+    # Optional: data.plot_sensors(show_names=True)
+    return data_
 
 
 def get_cond_epochs(
@@ -228,6 +267,7 @@ def get_cond_epochs(
     event_id: int,
     epoch_tmin: float = -1.5,
     epoch_tmax: float = 5.0,
+    detrend: Optional[int] = None,
     bad_trials: list[int] = [],
 ) -> mne.Epochs:
     """
@@ -244,6 +284,8 @@ def get_cond_epochs(
             to include in the epoch (default: -1.5).
         epoch_tmax (float, optional): The maximum time in seconds after the event
             to include in the epoch (default: 5.0).
+        detrend (Optional[int], optional): The detrending mode to apply before epoching
+            (e.g., 0 for no detrending, 1 for linear detrending). Defaults to None.
         bad_trials (list[int], optional): A list of trial indices (starting from 1)
             to be excluded due to bad data (default: []).
 
@@ -256,6 +298,7 @@ def get_cond_epochs(
         event_id=event_id,
         tmin=epoch_tmin,
         tmax=epoch_tmax,
+        detrend=detrend,
         baseline=None,  # Baseline correction can be applied later
         verbose=False,
     )
@@ -1085,8 +1128,7 @@ def offline_preprocess(
     # raw_eeg.plot()
 
     # Set channel types
-    mapping_type = map_chan_type(raw_eeg)
-    raw_eeg.set_channel_types(mapping_type)
+    raw_eeg = fix_montage_eeg(raw_eeg)
     # fig = raw_eeg.plot_sensors(show_names=True)
     # fig.show()
 
@@ -1112,6 +1154,7 @@ def offline_preprocess(
             raw_eeg,
             events,
             event_id,
+            detrend=0,
             epoch_tmin=epoch_baseline[0],
             epoch_tmax=epoch_duration,
             bad_trials=list_bad_trials,
@@ -1137,6 +1180,7 @@ def offline_preprocess(
 
         # Baseline removal
         epochs.apply_baseline(epoch_baseline)
+        # epochs.plot()
 
         epochs = reject_badEpoch(
             epochs,
