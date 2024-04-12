@@ -11,7 +11,7 @@ from classification.classification_utils import evaluate_intra_subject, evaluate
 # matplotlib.use('TkAgg')
 # print(plt.get_backend())
 # plt.switch_backend("Qt5Agg")
-mne.viz.set_browser_backend("qt")
+# mne.viz.set_browser_backend("qt")
 
 # =============== Constants ===============
 # Preprocessing parameters

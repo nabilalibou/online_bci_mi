@@ -16,8 +16,7 @@ from pyriemann.clustering import Potato
 from pyriemann.utils.covariance import normalize
 from autoreject import AutoReject, Ransac, get_rejection_threshold
 from utils.data_utils import auto_weight_chan_dict
-import matplotlib
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 
 # matplotlib.use("Qt5Agg")
 # matplotlib.use('TkAgg')
@@ -1180,6 +1179,10 @@ def offline_preprocess(
 
         # Baseline removal
         epochs.apply_baseline(epoch_baseline)
+        # epochs.plot()
+        # epochs.plot_psd(0, 50)
+
+        # epochs.detrend = 0
         # epochs.plot()
 
         epochs = reject_badEpoch(
