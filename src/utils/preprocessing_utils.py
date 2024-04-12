@@ -1161,7 +1161,7 @@ def offline_preprocess(
             bad_trials=list_bad_trials,
         )
         epochs.load_data()
-        epochs.set_eeg_reference(ref_channels=['M1', 'M2'])
+        epochs.set_eeg_reference(ref_channels=['Cz'])
         if epochs.info["bads"]:
             epochs = epochs.interpolate_bads(reset_bads=True)
 
