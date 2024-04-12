@@ -23,7 +23,6 @@ experiments = ["left_arm", "right_arm"]  # "left_arm", "right_arm", "right_leg"
 paradigm = ["me"]  # 'me'  'mi'
 l_freq, h_freq = 0.1, 50
 sfreq = 512
-doICA = "before_epoching"  # 'before_epoching'  'after_epoching'  None
 work_on_sources = False  # if True, save ICs sources and their topomaps for each conditions
 epoch_duration = 5
 epoch_baseline = (-1.5, 0)  # (-1, 0)
@@ -31,7 +30,7 @@ bad_trials = get_reported_bad_trials()  # Trials reported as wrong by the subjec
 data_path_suffix = (
     f"subj_({'_'.join(subjects)})_exp_({'_'.join(experiments)})_({'_'.join(paradigm)})"
 )
-prepro_path_suffix = f"filt({l_freq}_{h_freq})_basl{epoch_baseline}_ICA{doICA}.pkl"
+prepro_path_suffix = f"filt({l_freq}_{h_freq})_basl{epoch_baseline}.pkl"
 
 # Classification parameters
 eval_mode = "intra"  # 'inter'  'intra'
@@ -90,7 +89,6 @@ for subj in subjects:
                 epoch_duration=epoch_duration,
                 epoch_baseline=epoch_baseline,
                 sfreq=sfreq,
-                doICA=doICA,
                 work_on_sources=work_on_sources,
                 bad_trials=bad_trials,
                 save_prepro_repo=save_prepro,

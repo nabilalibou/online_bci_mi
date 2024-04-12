@@ -1094,7 +1094,6 @@ def offline_preprocess(
     epoch_duration=5,
     epoch_baseline=(-1.5,0),
     sfreq=512,
-    doICA="after_epoching",
     work_on_sources=False,
     bad_trials=get_reported_bad_trials(),
     save_prepro_repo="../data/preprocessed",
@@ -1111,12 +1110,18 @@ def offline_preprocess(
     :param epoch_duration:
     :param epoch_baseline:
     :param sfreq:
-    :param doICA:
     :param work_on_sources:
     :param bad_trials:
     :param save_prepro_repo:
     :return: epochs:
     """
+    freq_band = {
+        "delta": [1, 4],
+        "theta": [4, 8],
+        "alpha": [8, 13],
+        "beta": [13, 30],
+        "gamma": [30, 50],
+    }
     file = f"{data_repo}/{subject}_{experiment}/{subject}_{experiment}.fif"
     events_csv = f"{data_repo}/{subject}_{experiment}/{subject}_{experiment}.events.csv"
     me_event_id, mi_event_id = get_cond_id(experiment)
@@ -1140,9 +1145,6 @@ def offline_preprocess(
         raw_eeg, l_freq, h_freq, keepEOG=True, Return_log=True
     )
 
-    # if doICA == "before_epoching":
-    #     raw_eeg = perform_ica(raw_eeg, return_sources=work_on_sources)
-
     # Annotate according to events.csv markers time stamps
     raw_eeg, events = annotate_by_markers(raw_eeg, subject, events_csv, me_event_id, mi_event_id)
 
@@ -1153,37 +1155,32 @@ def offline_preprocess(
             raw_eeg,
             events,
             event_id,
-            detrend=0,
+            detrend=1,
             epoch_tmin=epoch_baseline[0],
             epoch_tmax=epoch_duration,
             bad_trials=list_bad_trials,
         )
+        epochs.load_data()
+        epochs.set_eeg_reference(ref_channels=['M1', 'M2'])
+        if epochs.info["bads"]:
+            epochs = epochs.interpolate_bads(reset_bads=True)
 
-        raw_eeg.set_eeg_reference(ref_channels=['M1', 'M2'])
-        if raw_eeg.info["bads"]:
-            raw_eeg = raw_eeg.interpolate_bads(reset_bads=True)
-
-        if doICA == "after_epoching":
-            topo_path = None
-            if save_prepro_repo and work_on_sources:
-                try:
-                    Path(f"{save_prepro_repo}/ics_sources/").mkdir(parents=True, exist_ok=True)
-                except FileExistsError:
-                    pass
-                topo_path = (
-                    f"{save_prepro_repo}/ics_sources/sources_topo_{subject}_{experiment}_"
-                    f"{cond_dict[event_id]}_filt({l_freq}_{h_freq})_basl{epoch_baseline}_"
-                    f"ICA{doICA}.png"
-                )
-            epochs = perform_ica(epochs, return_sources=work_on_sources, topo_saveas=topo_path)
+        topo_path = None
+        if save_prepro_repo and work_on_sources:
+            try:
+                Path(f"{save_prepro_repo}/ics_sources/").mkdir(parents=True, exist_ok=True)
+            except FileExistsError:
+                pass
+            topo_path = (
+                f"{save_prepro_repo}/ics_sources/sources_topo_{subject}_{experiment}_"
+                f"{cond_dict[event_id]}_filt({l_freq}_{h_freq})_basl{epoch_baseline}_.png"
+            )
+        epochs = perform_ica(epochs, proba_thresh=0.5, return_sources=work_on_sources, topo_saveas=topo_path)
 
         # Baseline removal
         epochs.apply_baseline(epoch_baseline)
         # epochs.plot()
         # epochs.plot_psd(0, 50)
-
-        # epochs.detrend = 0
-        # epochs.plot()
 
         epochs = reject_badEpoch(
             epochs,
@@ -1198,7 +1195,6 @@ def offline_preprocess(
             method=["psd"],
             mode="conservative",
         )
-
         if save_prepro_repo:
             prefix = "prepro"
             prepro_repo = save_prepro_repo
@@ -1211,15 +1207,19 @@ def offline_preprocess(
                 pass
             prepro_file_path = (
                 f"{prepro_repo}{prefix}_{subject}_{experiment}_{cond_dict[event_id]}_filt("
-                f"{l_freq}_{h_freq})_basl{epoch_baseline}_ICA{doICA}.fif"
+                f"{l_freq}_{h_freq})_basl{epoch_baseline}.fif"
             )
             erptopo_path = (
                 f"{prepro_repo}{prefix}_{subject}_{experiment}_{cond_dict[event_id]}_filt("
-                f"{l_freq}_{h_freq})_basl{epoch_baseline}_ICA{doICA}.png"
+                f"{l_freq}_{h_freq})_basl{epoch_baseline}.png"
             )
             topo_path = (
                 f"{prepro_repo}{prefix}_topo_{subject}_{experiment}_{cond_dict[event_id]}_filt"
-                f"({l_freq}_{h_freq})_basl{epoch_baseline}_ICA{doICA}.png"
+                f"({l_freq}_{h_freq})_basl{epoch_baseline}.png"
+            )
+            psd_topo_path = (
+                f"{prepro_repo}{prefix}_psd_topo_{subject}_{experiment}_{cond_dict[event_id]}_filt"
+                f"({l_freq}_{h_freq})_basl{epoch_baseline}.png"
             )
             if not work_on_sources:
                 evoked = epochs.average()
@@ -1234,6 +1234,12 @@ def offline_preprocess(
                     times=times, average=0.050, ncols="auto", nrows="auto", show=False
                 )
                 topo_fig.savefig(topo_path, format="png", bbox_inches="tight")
+                psd = epochs.compute_psd(method="multitaper", fmin=1, fmax=h_freq)
+                fig = psd.plot_topomap(
+                    freq_band, show=True
+                )  # cmap='Spectral_r' vlim='joint' sphere=head_size
+                fig.savefig(psd_topo_path, format="png", dpi=200)
+                plt.close(fig)
             epochs.save(prepro_file_path, overwrite=True)
             print(f"file {prepro_file_path} along its evoked erp saved")
 

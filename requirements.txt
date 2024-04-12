@@ -16,3 +16,4 @@ xlsxwriter >= 3.0.0
 # mne-qt-browser >= 0.6.0
 PyQt6 >= 6.0.0
 mne-features >= 0.2.1
+torch >= 2.0.0
