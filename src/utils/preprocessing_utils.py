@@ -18,6 +18,7 @@ from autoreject import AutoReject, Ransac, get_rejection_threshold
 from utils.data_utils import auto_weight_chan_dict
 from matplotlib import pyplot as plt
 
+
 # matplotlib.use("Qt5Agg")
 # matplotlib.use('TkAgg')
 # print(plt.get_backend())
@@ -194,10 +195,10 @@ def get_reported_bad_trials():
 
 
 def fix_montage_eeg(
-    data: Union[mne.io.Raw, mne.Epochs],
-    ref_chan: str = "",
-    montage_ref: str = None,
-    head_size: float = 0.095,
+        data: Union[mne.io.Raw, mne.Epochs],
+        ref_chan: str = "",
+        montage_ref: str = None,
+        head_size: float = 0.095,
 ) -> Union[mne.io.Raw, mne.Epochs]:
     """
     Corrects channel names, assigns standard MNE channel types,
@@ -237,8 +238,8 @@ def fix_montage_eeg(
         elif "EOG" in name:
             channel_type_mapping[name] = "eog"
         elif any(
-            term in name
-            for term in ("STATUS", "TRIGGERS", "Counter 2power24")
+                term in name
+                for term in ("STATUS", "TRIGGERS", "Counter 2power24")
         ):
             channel_type_mapping[name] = "stim"
         elif any(term in name for term in ("M1", "M2")):
@@ -261,13 +262,13 @@ def fix_montage_eeg(
 
 
 def get_cond_epochs(
-    raw_eeg: mne.io.Raw,
-    events: np.ndarray,
-    event_id: int,
-    epoch_tmin: float = -1.5,
-    epoch_tmax: float = 5.0,
-    detrend: Optional[int] = None,
-    bad_trials: list[int] = [],
+        raw_eeg: mne.io.Raw,
+        events: np.ndarray,
+        event_id: int,
+        epoch_tmin: float = -1.5,
+        epoch_tmax: float = 5.0,
+        detrend: Optional[int] = None,
+        bad_trials: list[int] = [],
 ) -> mne.Epochs:
     """
     Creates condition-specific epochs from a raw EEG signal and event markers.
@@ -406,7 +407,8 @@ def get_good_eeg_chan(data: mne.io.Raw) -> list[str]:
     return good_eeg_chan
 
 
-def bad_by_peak_to_peak(data: np.ndarray, sfreq: float, window_secs: float = 1, reject_value: float = 100e-6) -> np.ndarray:
+def bad_by_peak_to_peak(data: np.ndarray, sfreq: float, window_secs: float = 1,
+                        reject_value: float = 100e-6) -> np.ndarray:
     """
     Identifies potentially bad channels based on median peak-to-peak amplitudes within non-overlapping windows.
     The function segments the EEG data (expected shape: (n_channels, n_timepoints)) into windows of a specified width
@@ -431,7 +433,8 @@ def bad_by_peak_to_peak(data: np.ndarray, sfreq: float, window_secs: float = 1, 
     return median_ptp > reject_value
 
 
-def bad_by_PSD(data: Union[mne.io.BaseRaw, mne.Epochs], fmin: float = 0, fmax: float = np.inf, sd: float = 3) -> np.ndarray:
+def bad_by_PSD(data: Union[mne.io.BaseRaw, mne.Epochs], fmin: float = 0, fmax: float = np.inf,
+               sd: float = 3) -> np.ndarray:
     """
     Identifies potentially bad channels based on deviations in their power spectral density (PSD) values.
 
@@ -461,20 +464,23 @@ def bad_by_PSD(data: Union[mne.io.BaseRaw, mne.Epochs], fmin: float = 0, fmax: f
 
     if isinstance(data, mne.io.BaseRaw):
         method = "welch"
+        psd_sd = lambda x, y: x - y
     else:
         method = "multitaper"
-
+        psd_sd = lambda x, y: np.sum(x - y, axis=1)
     # Efficiently calculate PSD, convert to dB, compute Z-scores across all channels and identify channels > threshold
     psd = data.compute_psd(method=method, fmin=fmin, fmax=fmax)
     log_psd = 10 * np.log10(psd.get_data())
-    zscore_psd = scipy.stats.zscore(log_psd, axis=0)
+    # zscore_psd = scipy.stats.zscore(log_psd, axis=0)
+    psd_avg = np.median(log_psd, axis=0)
+    zscore_psd = scipy.stats.zscore(psd_sd(log_psd, psd_avg))
     bad_channels = np.any(zscore_psd > sd, axis=1)
 
     return bad_channels
 
 
 def detect_badChan(
-    raw_data, fmin=None, fmax=None, useRansac=False, keepEOG=False, Return_log=False, **kwargs
+        raw_data, fmin=None, fmax=None, useRansac=False, keepEOG=False, Return_log=False, **kwargs
 ):
     """
     Detects bad or missing channels in MNE Raw data using various criteria.
@@ -557,55 +563,58 @@ def detect_badChan(
         log_dict["ptp"] = list(bad_by_ptp)
         raw_filtered.info["bads"].extend(bad_by_ptp)
         if (
-            len(bad_by_ptp) == channel_used
+                len(bad_by_ptp) == channel_used
         ):  # if all channels bad by ptp no need to use NoisyChannels
-            continue
-
-        try:
-            # Flat rejection
-            nc = NoisyChannels(raw_filtered)  # auto run 'find_bad_by_nan_flat()' when instantiated
-            log_dict["flat"].extend(nc.get_bads())
-
-            # Correlation rejection
-            nc.find_bad_by_correlation(correlation_threshold=v["correlation_threshold"])
-            log_dict["correlation"].extend(nc.get_bads())
-
-            # Deviation rejection
-            nc.find_bad_by_deviation(deviation_threshold=v["deviation_threshold"])
-            log_dict["deviation"].extend(nc.get_bads())
-            raw_filtered.info["bads"].extend(nc.get_bads())
-
-            # PSD rejection
-            if not v["high_freq"]:
-                if not raw_filtered.info["lowpass"]:
-                    fmax = np.inf
-                else:
-                    fmax = raw_filtered.info["lowpass"]
-            else:
-                fmax = v["high_freq"]
-            if not v["low_freq"]:
-                if not raw_filtered.info["highpass"]:
-                    fmin = 0
-                else:
-                    fmin = raw_filtered.info["highpass"]
-            else:
-                fmin = v["low_freq"]
-            mask = bad_by_PSD(raw_filtered, fmin=fmin, fmax=fmax)
-            channel_used = get_good_eeg_chan(raw_filtered)
-            bad_by_psd = [chan for i, chan in enumerate(channel_used) if mask[i]]
-            log_dict["psd"].extend(bad_by_psd)
-            raw_filtered.info["bads"].extend(bad_by_psd)
-
-            # Ransac rejection
-            if useRansac:
-                nc.find_bad_by_ransac()
-                log_dict["ransac"].extend(nc.get_bads())
-                print(f"Bads by ransac: {nc.bad_by_ransac}")
-                raw_filtered.info["bads"].extend(nc.get_bads())
-        except ValueError as e:  # all channels have been removed by ptp
             warnings.warn(
-                f"ValueError: {e}. \nAll channels have been labelled bad by peak-to-peak."
+                f"All channels have been labelled bad by peak-to-peak."
             )
+            print(bad_chans)
+            if Return_log:
+                for k, v in log_dict.items():
+                    if v:
+                        log_dict[k] = list(set(v))
+                return bad_chans, log_dict
+
+        # Flat rejection
+        nc = NoisyChannels(raw_filtered)  # auto run 'find_bad_by_nan_flat()' when instantiated
+        log_dict["flat"].extend(nc.get_bads())
+
+        # Correlation rejection
+        nc.find_bad_by_correlation(correlation_threshold=v["correlation_threshold"])
+        log_dict["correlation"].extend(nc.get_bads())
+
+        # Deviation rejection
+        nc.find_bad_by_deviation(deviation_threshold=v["deviation_threshold"])
+        log_dict["deviation"].extend(nc.get_bads())
+        raw_filtered.info["bads"].extend(nc.get_bads())
+
+        # PSD rejection
+        if not v["high_freq"]:
+            if not raw_filtered.info["lowpass"]:
+                fmax = np.inf
+            else:
+                fmax = raw_filtered.info["lowpass"]
+        else:
+            fmax = v["high_freq"]
+        if not v["low_freq"]:
+            if not raw_filtered.info["highpass"]:
+                fmin = 0
+            else:
+                fmin = raw_filtered.info["highpass"]
+        else:
+            fmin = v["low_freq"]
+        mask = bad_by_PSD(raw_filtered, fmin=fmin, fmax=fmax)
+        channel_used = get_good_eeg_chan(raw_filtered)
+        bad_by_psd = [chan for i, chan in enumerate(channel_used) if mask[i]]
+        log_dict["psd"].extend(bad_by_psd)
+        raw_filtered.info["bads"].extend(bad_by_psd)
+
+        # Ransac rejection
+        if useRansac:
+            nc.find_bad_by_ransac()
+            log_dict["ransac"].extend(nc.get_bads())
+            print(f"Bads by ransac: {nc.bad_by_ransac}")
+            raw_filtered.info["bads"].extend(nc.get_bads())
         bad_chans.extend(raw_filtered.info.get("bads", []))
     bad_chans = list(set(bad_chans))
     print(bad_chans)
@@ -663,11 +672,11 @@ def bad_epoch_ptp(epochs, reject_value=200e-6):
 
 
 def autoreject_bad_epochs(
-    epochs: mne.Epochs,
-    interpolate: bool = True,
-    n_interpolate: np.ndarray = np.array([1, 4, 32]),
-    plot_reject: bool = False,
-    Return_reject_log: bool = False,
+        epochs: mne.Epochs,
+        interpolate: bool = True,
+        n_interpolate: np.ndarray = np.array([1, 4, 32]),
+        plot_reject: bool = False,
+        Return_reject_log: bool = False,
 ) -> Union[mne.Epochs, np.ndarray]:
     """
     Applies Autoreject for local bad sensor detection and handling.
@@ -720,19 +729,19 @@ def autoreject_bad_epochs(
 
 
 def reject_badEpoch(
-    data: mne.Epochs,
-    method: list[str] = ["potato", "local_ar"],
-    ch_names: list[str] = None,
-    fmin: float = None,
-    fmax: float = None,
-    ptp_reject: float = 150e-6,
-    potato_zscore_thresh: float = 3.0,
-    local_ar_coeff_mult: float = 3.0,
-    psd_zscore_thresh: float = 3.0,
-    global_ar_n_interpolate: np.ndarray = np.array([1, 4, 32]),
-    mode: str = None,
-    chan_weight_dict: dict[str, float] = None,
-    Return_log: bool = False,
+        data: mne.Epochs,
+        method: list[str] = ["potato", "local_ar"],
+        ch_names: list[str] = None,
+        fmin: float = None,
+        fmax: float = None,
+        ptp_reject: float = 150e-6,
+        potato_zscore_thresh: float = 3.0,
+        local_ar_coeff_mult: float = 3.0,
+        psd_zscore_thresh: float = 3.0,
+        global_ar_n_interpolate: np.ndarray = np.array([1, 4, 32]),
+        mode: str = None,
+        chan_weight_dict: dict[str, float] = None,
+        Return_log: bool = False,
 ) -> Union[mne.Epochs, tuple[mne.Epochs, dict]]:
     """
     Automatically rejects bad epochs based on a combination of algorithms.
@@ -900,7 +909,7 @@ def reject_badEpoch(
             if m == "global_ar":
                 reject_thresh = {
                     "eeg": get_rejection_threshold(config_epochs, ch_types="eeg", cv=5)["eeg"]
-                    * local_ar_coeff_mult
+                           * local_ar_coeff_mult
                 }
                 print(f"The rejection threshold is {reject_thresh}")
                 rpf_epochs_reshape_ = np.reshape(
@@ -963,14 +972,14 @@ def reject_badEpoch(
 
 
 def perform_ica(
-    eeg_data: Union[mne.Epochs, mne.io.Raw],
-    nbr_ics: int = None,
-    ic_min_var: float = 0.01,
-    proba_thresh: float = 0.7,
-    return_sources: bool = False,
-    plot_topo: bool = False,
-    topo_saveas: str = None,
-    Return_log: bool = False,
+        eeg_data: Union[mne.Epochs, mne.io.Raw],
+        nbr_ics: int = None,
+        ic_min_var: float = 0.01,
+        proba_thresh: float = 0.7,
+        return_sources: bool = False,
+        plot_topo: bool = False,
+        topo_saveas: str = None,
+        Return_log: bool = False,
 ) -> Union[mne.Epochs, mne.io.Raw, tuple[Union[mne.Epochs, mne.io.Raw], dict]]:
     """
     Performs Independent Component Analysis (ICA) and removes artifact components
@@ -1086,17 +1095,17 @@ def perform_ica(
 
 
 def offline_preprocess(
-    subject,
-    experiment,
-    data_repo="../data",
-    l_freq=0.1,
-    h_freq=50,
-    epoch_duration=5,
-    epoch_baseline=(-1.5,0),
-    sfreq=512,
-    work_on_sources=False,
-    bad_trials=get_reported_bad_trials(),
-    save_prepro_repo="../data/preprocessed",
+        subject,
+        experiment,
+        data_repo="../data",
+        l_freq=0.1,
+        h_freq=50,
+        epoch_duration=5,
+        epoch_baseline=(-1.5, 0),
+        sfreq=512,
+        work_on_sources=False,
+        bad_trials=get_reported_bad_trials(),
+        save_prepro_repo="../data/preprocessed",
 ):
     """
     Apply preprocessing on the raw eeg data extracted from the .fif files for each subject and
@@ -1236,7 +1245,7 @@ def offline_preprocess(
                 topo_fig.savefig(topo_path, format="png", bbox_inches="tight")
                 psd = epochs.compute_psd(method="multitaper", fmin=1, fmax=h_freq)
                 fig = psd.plot_topomap(
-                    freq_band, show=True
+                    freq_band, show=False
                 )  # cmap='Spectral_r' vlim='joint' sphere=head_size
                 fig.savefig(psd_topo_path, format="png", dpi=200)
                 plt.close(fig)
