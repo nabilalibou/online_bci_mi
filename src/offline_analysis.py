@@ -15,9 +15,10 @@ from classification.classification_utils import evaluate_intra_subject, evaluate
 
 # =============== Constants ===============
 # Preprocessing parameters
-doPrepro = True
+doPrepro = False
 data_repo = "../data"
 save_prepro = f"../results/data_preprocessed/"
+save_data = True
 subjects = ["na", "mp"]  # "na", "mp"
 experiments = ["left_arm", "right_arm"]  # "left_arm", "right_arm", "right_leg"
 paradigm = ["me"]  # 'me'  'mi'
@@ -30,7 +31,7 @@ bad_trials = get_reported_bad_trials()  # Trials reported as wrong by the subjec
 data_path_suffix = (
     f"subj_({'_'.join(subjects)})_exp_({'_'.join(experiments)})_({'_'.join(paradigm)})"
 )
-prepro_path_suffix = f"filt({l_freq}_{h_freq})_basl{epoch_baseline}.pkl"
+prepro_path_suffix = f"filt({l_freq}_{h_freq})_basl{epoch_baseline}.fif"
 
 # Classification parameters
 eval_mode = "intra"  # 'inter'  'intra'
@@ -41,7 +42,7 @@ slide_windows_size = (
 )
 score_selection = ["accuracy", "balanced_acc"]
 clf_selection = ["KNN", "KNNnostd", "CSP + KNN", "CSP4 + KNN", "CSP4 + KNNstd", "rbfSVC", "eegnet"]
-clf_selection = ["Vect + stdScale + KNN", "Vect + SVC"]
+clf_selection = ["Vect + KNN", "Vect + SVC", "PCA3d + CSP + KNN", "PCA3d + CSP + LDA", "PCA3d + CSP +  LR", "PCA3d + CSP + LR"] # "CSP + KNN", "CSP + stdScale + KNN" "Cov + TS + LR"
 report_path = f"../results/classif_report/{eval_mode}_{n_splits}fold_{nbr_runs}runs_{data_path_suffix}"
 
 # Features parameters
@@ -92,35 +93,35 @@ for subj in subjects:
                 work_on_sources=work_on_sources,
                 bad_trials=bad_trials,
                 save_prepro_repo=save_prepro,
+                Save_data=save_data
             )
+        if work_on_sources:
+            prepro_repo = f"{save_prepro}ic_sources/"
+            prefix = "sources"
         else:
-            if work_on_sources:
-                prepro_repo = f"{save_prepro}ics_sources/"
-                prefix = "sources"
-            else:
-                prepro_repo = f"{save_prepro}channels/"
-                prefix = "prepro"
-            for task in paradigm:
-                epoch_path = (
-                    f"{prepro_repo}{prefix}_{subj}_{exp}_{task}_{prepro_path_suffix}"
-                )
-                data_dict[f"{subj}"][f"{exp}_{task}"] = {}
-                try:
-                    epochs = mne.read_epochs(epoch_path, proj=True, preload=True, verbose=None)
-                except FileNotFoundError as e:
-                    raise FileNotFoundError(e)
-                epoch_events = epochs.events[:, 2]
-                X = epochs.get_data(picks="eeg")
-                y = np.full(len(epoch_events), count)
-                data_dict[f"{subj}"][f"{exp}_{task}"]["X"] = get_features(
-                    X, features_list=features_list, sfreq=sfreq, funcs_params=funcs_params
-                )
-                data_dict[f"{subj}"][f"{exp}_{task}"]["Y"] = y
-                num_chans = X.shape[1]
-                num_features = X.shape[2]
-                data_length += len(epoch_events)
-                count += 1
-                # sample size append paradigm first then for each cond then subj
+            prepro_repo = f"{save_prepro}/"
+            prefix = "prepro"
+        for task in paradigm:
+            epoch_path = (
+                f"{prepro_repo}{prefix}_{subj}_{exp}_{task}_{prepro_path_suffix}"
+            )
+            data_dict[f"{subj}"][f"{exp}_{task}"] = {}
+            try:
+                epochs = mne.read_epochs(epoch_path, proj=True, preload=True, verbose=None)
+            except FileNotFoundError as e:
+                raise FileNotFoundError(e)
+            epoch_events = epochs.events[:, 2]
+            X = epochs.get_data(picks="eeg")
+            y = np.full(len(epoch_events), count)
+            data_dict[f"{subj}"][f"{exp}_{task}"]["X"] = get_features(
+                X, features_list=features_list, sfreq=sfreq, funcs_params=funcs_params
+            )
+            data_dict[f"{subj}"][f"{exp}_{task}"]["Y"] = y
+            num_chans = X.shape[1]
+            num_features = X.shape[2]
+            data_length += len(epoch_events)
+            count += 1
+            # sample size append paradigm first then for each cond then subj
     subj_data_length.append(data_length)
 
 # Cross-validation and Evaluate intra/inter-subject

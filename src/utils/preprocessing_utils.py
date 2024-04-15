@@ -1106,6 +1106,7 @@ def offline_preprocess(
         work_on_sources=False,
         bad_trials=get_reported_bad_trials(),
         save_prepro_repo="../data/preprocessed",
+        Save_data=False
 ):
     """
     Apply preprocessing on the raw eeg data extracted from the .fif files for each subject and
@@ -1122,6 +1123,7 @@ def offline_preprocess(
     :param work_on_sources:
     :param bad_trials:
     :param save_prepro_repo:
+    :param Save_data:
     :return: epochs:
     """
     freq_band = {
@@ -1173,15 +1175,16 @@ def offline_preprocess(
         epochs.set_eeg_reference(ref_channels=['Cz'])
         if epochs.info["bads"]:
             epochs = epochs.interpolate_bads(reset_bads=True)
+        epochs.info['bads'].extend(['Cz'])
 
         topo_path = None
         if save_prepro_repo and work_on_sources:
             try:
-                Path(f"{save_prepro_repo}/ics_sources/").mkdir(parents=True, exist_ok=True)
+                Path(f"{save_prepro_repo}/ic_sources/").mkdir(parents=True, exist_ok=True)
             except FileExistsError:
                 pass
             topo_path = (
-                f"{save_prepro_repo}/ics_sources/sources_topo_{subject}_{experiment}_"
+                f"{save_prepro_repo}/ic_sources/sources_topo_{subject}_{experiment}_"
                 f"{cond_dict[event_id]}_filt({l_freq}_{h_freq})_basl{epoch_baseline}_.png"
             )
         epochs = perform_ica(epochs, proba_thresh=0.5, return_sources=work_on_sources, topo_saveas=topo_path)
@@ -1204,11 +1207,11 @@ def offline_preprocess(
             method=["psd"],
             mode="conservative",
         )
-        if save_prepro_repo:
+        if Save_data and save_prepro_repo:
             prefix = "prepro"
             prepro_repo = save_prepro_repo
             if work_on_sources:
-                prepro_repo = f"{save_prepro_repo}/ics_sources/"
+                prepro_repo = f"{save_prepro_repo}/ic_sources/"
                 prefix = "sources"
             try:
                 Path(f"{prepro_repo}").mkdir(parents=True, exist_ok=True)
