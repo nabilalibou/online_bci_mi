@@ -33,14 +33,16 @@ MI tasks as illustrated in the diagram below:
 ## Offline Analysis
 ### Preprocessing
 The raw EEG data undergoes various steps to remove artifacts and noise, including:
-- Re-referencing to an average reference montage.
-- Removing mastoid channels.
-- Band-pass filtering (2 Hz - 50 Hz) with zero-phase response.
-- ICA for artifact rejection with automatic component labeling using [MNE-ICALabel](https://github.com/mne-tools/mne-icalabel).
-- Automatic bad channel detection & removal with spherical spline interpolation for reconstruction.
+- Band-pass filtering (0.1 Hz - 50 Hz) with zero-phase response.
+- Automatically detect bad channels based on peak-to-peak amplitude, deviation from the mean amplitude, correlation with 
+others channels and power spectral density distribution.
 - Epoching (-0.15s to 5s around each event-task).
+- Re-referencing to the 'Cz' electrode.
+- Reconstruction of bad channels by spherical spline interpolation [[1]](#1).
+- ICA for artifact rejection with automatic component labeling using [MNE-ICALabel](https://github.com/mne-tools/mne-icalabel).
 - Baseline correction.
-- Automatic bad epoch rejection using [Autoreject](https://autoreject.github.io/stable/index.html).
+- Automatic bad epoch rejection based on the power spectral density and the Riemannian covariance (using the Potato 
+algorithm [[2]](#2)).
 
 ### Feature extraction 
 (Details to be added)  
@@ -68,3 +70,14 @@ pip install -r requirements.txt
 
 ## Video/Gif: 
 (To be added - demonstrate online preprocessing and classification)
+
+# References
+
+<a id="1">[1]</a>
+F. Perrin, J. Pernier, O. Bertrand, and J. F. Echallier, “Erratum: Spherical splines for scalp 
+potential and current density mapping (Electroenceph. Clin. Neurophysiol. 1989, 72: 184
+187),” vol. 76, Jan. 1990.
+
+<a id="2">[2]</a>
+The Riemannian Potato: an automatic and adaptive artifact detection method for online experiments using Riemannian 
+geometry A. Barachant, A Andreev, and M. Congedo. TOBI Workshop lV, Jan 2013, Sion, Switzerland. pp.19-20.
