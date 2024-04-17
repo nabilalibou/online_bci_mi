@@ -242,7 +242,7 @@ def fix_montage_eeg(
                 for term in ("STATUS", "TRIGGERS", "Counter 2power24")
         ):
             channel_type_mapping[name] = "stim"
-        elif any(term in name for term in ("M1", "M2")):
+        elif any(term in name for term in ("M1", "M2", "A1", "A2")):
             channel_type_mapping[name] = "misc"
         else:
             channel_type_mapping[name] = "eeg"
@@ -400,9 +400,10 @@ def get_good_eeg_chan(data: mne.io.Raw) -> list[str]:
     Returns:
         list[str]: A list of good EEG channel names.
     """
+    data_ = data.pick('eeg')
     good_eeg_chan = []
-    for ch in data.info["chs"]:
-        if ch["kind"] == 2 and ch["ch_name"] not in data.info["bads"]:
+    for ch in data_.info["chs"]:
+        if ch["kind"] == 2 and ch["ch_name"] not in data_.info["bads"]:
             good_eeg_chan.append(ch["ch_name"])
     return good_eeg_chan
 
@@ -522,6 +523,7 @@ def detect_badChan(
     assert isinstance(useRansac, bool)
     deviation_threshold = kwargs.get("deviation_threshold", 6.0)
     correlation_threshold = kwargs.get("correlation_threshold", 0.2)
+    bad_by_PSD_sd = kwargs.get("bad_by_PSD_sd", 3)
     raw_eeg = raw_data.copy().pick("eeg")
     config = {
         "global": {
@@ -603,7 +605,7 @@ def detect_badChan(
                 fmin = raw_filtered.info["highpass"]
         else:
             fmin = v["low_freq"]
-        mask = bad_by_PSD(raw_filtered, fmin=fmin, fmax=fmax)
+        mask = bad_by_PSD(raw_filtered, fmin=fmin, fmax=fmax, sd=bad_by_PSD_sd)
         channel_used = get_good_eeg_chan(raw_filtered)
         bad_by_psd = [chan for i, chan in enumerate(channel_used) if mask[i]]
         log_dict["psd"].extend(bad_by_psd)
