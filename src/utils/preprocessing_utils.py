@@ -539,7 +539,7 @@ def detect_badChan(
             "keepEOG": {
                 "ch_names": [
                     ch
-                    for ch in raw_eeg.info["ch_names"]
+                    for ch in get_good_eeg_chan(raw_eeg)
                     if ch.startswith("F") or ch.startswith("AF")
                 ],
                 "low_freq": 15,
@@ -583,11 +583,11 @@ def detect_badChan(
 
         # Correlation rejection
         nc.find_bad_by_correlation(correlation_threshold=v["correlation_threshold"])
-        log_dict["correlation"].extend(nc.get_bads())
+        log_dict["correlation"].extend(set(log_dict["flat"]).symmetric_difference(nc.get_bads()))
 
         # Deviation rejection
         nc.find_bad_by_deviation(deviation_threshold=v["deviation_threshold"])
-        log_dict["deviation"].extend(nc.get_bads())
+        log_dict["deviation"].extend(set(log_dict["correlation"]).symmetric_difference(nc.get_bads()))
         raw_filtered.info["bads"].extend(nc.get_bads())
 
         # PSD rejection
@@ -696,7 +696,7 @@ def autoreject_bad_epochs(
             interpolate in case of bad trials (default: [1, 4, 32]).
         plot_reject (bool, optional): If True, plots raw bad epochs and reject log
             (default: False).
-        return_reject_log (bool, optional): If True, returns the reject log instead
+        Return_reject_log (bool, optional): If True, returns the reject log instead
             of the cleaned epochs (default: False).
 
     Returns:
@@ -717,7 +717,6 @@ def autoreject_bad_epochs(
     # Handle plotting logic and potential errors
     if plot_reject and reject_log.bad_epochs.any():
         try:
-            # Attempt to plot epochs with scalings
             epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
         except (AttributeError, ValueError):
             # Catch potential errors related to plotting (e.g., missing scalings argument)
@@ -748,7 +747,7 @@ def reject_badEpoch(
     """
     Automatically rejects bad epochs based on a combination of algorithms.
     This function rejects bad epochs from the provided MNE Epochs object (`data`)
-    using the specified rejection methods (`method`).  Channe selection (`ch_names`),
+    using the specified rejection methods (`method`).  Channel selection (`ch_names`),
     frequency bands of interest (`fmin`, `fmax`), and various parameters for each
     rejection method can be customized.
     todo: add **kwargs for all the parameters.
@@ -815,7 +814,7 @@ def reject_badEpoch(
         config = {
             "keepEOG": {
                 "ch_names": [
-                    ch for ch in epochs.ch_names if ch.startswith("F") or ch.startswith("AF")
+                    ch for ch in get_good_eeg_chan(epochs) if ch.startswith("F") or ch.startswith("AF")
                 ],
                 "low_freq": 15,
                 "high_freq": fmax,
@@ -1106,6 +1105,7 @@ def offline_preprocess(
         epoch_baseline=(-1.5, 0),
         sfreq=512,
         work_on_sources=False,
+        interpolate=True,
         bad_trials=get_reported_bad_trials(),
         save_prepro_repo="../data/preprocessed",
         Save_data=False
@@ -1123,6 +1123,7 @@ def offline_preprocess(
     :param epoch_baseline:
     :param sfreq:
     :param work_on_sources:
+    :param interpolate:
     :param bad_trials:
     :param save_prepro_repo:
     :param Save_data:
@@ -1175,7 +1176,7 @@ def offline_preprocess(
         )
         epochs.load_data()
         epochs.set_eeg_reference(ref_channels=['Cz'])
-        if epochs.info["bads"]:
+        if epochs.info["bads"] and interpolate:
             epochs = epochs.interpolate_bads(reset_bads=True)
         epochs.info['bads'].extend(['Cz'])
 

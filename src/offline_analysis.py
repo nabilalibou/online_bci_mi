@@ -15,7 +15,7 @@ from classification.classification_utils import evaluate_intra_subject, evaluate
 
 # =============== Constants ===============
 # Preprocessing parameters
-doPrepro = False
+doPrepro = True
 data_repo = "../data"
 save_prepro = f"../results/data_preprocessed/"
 save_data = True
@@ -25,6 +25,7 @@ paradigm = ["me"]  # 'me'  'mi'
 l_freq, h_freq = 0.1, 50
 sfreq = 512
 work_on_sources = False  # if True, save ICs sources and their topomaps for each conditions
+interpolate = True
 epoch_duration = 5
 epoch_baseline = (-1.5, 0)  # (-1, 0)
 bad_trials = get_reported_bad_trials()  # Trials reported as wrong by the subjects
@@ -42,8 +43,10 @@ slide_windows_size = (
 )
 score_selection = ["accuracy", "balanced_acc"]
 clf_selection = ["KNN", "KNNnostd", "CSP + KNN", "CSP4 + KNN", "CSP4 + KNNstd", "rbfSVC", "eegnet"]
-clf_selection = ["Vect + KNN", "Vect + SVC", "PCA3d + CSP + KNN", "PCA3d + CSP + LDA", "PCA3d + CSP +  LR", "PCA3d + CSP + LR"] # "CSP + KNN", "CSP + stdScale + KNN" "Cov + TS + LR"
+# "PCA3d + CSP + KNN", "PCA3d + CSP + LDA", "PCA3d + CSP +  LR", "PCA3d + CSP + LR",
+clf_selection = ["Vect + KNN", "Vect + SVC", "Cov + TS + LR"]  # "CSP + KNN", "CSP + stdScale + KNN" "Cov + TS + LR"
 report_path = f"../results/classif_report/{eval_mode}_{n_splits}fold_{nbr_runs}runs_{data_path_suffix}"
+
 
 # Features parameters
 # Check feature.extraction.get_features() documentation to see all available features
@@ -91,6 +94,7 @@ for subj in subjects:
                 epoch_baseline=epoch_baseline,
                 sfreq=sfreq,
                 work_on_sources=work_on_sources,
+                interpolate=interpolate,
                 bad_trials=bad_trials,
                 save_prepro_repo=save_prepro,
                 Save_data=save_data
