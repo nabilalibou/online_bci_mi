@@ -1,9 +1,8 @@
 """
 TODO Futures Features:
-- Spatial Representation (paper+code DeepForest) => It is more of a data Transformer. Compute psd or others then put it
-in topo_rpz.
-=> For spatial rpz => better to use it as a Transformer directly in the classification pipeline. Because it will always
-be the final feature. FeatureExtractor(sfreq=sfreq, selected_funcs=selected_funcs)
+Spatial representation (see paper+code DeepForest). Better as a Transformer because you could first compute psd before
+getting a spatial representation (as it is always the final feature anyway).
+FeatureExtractor(sfreq=sfreq, selected_funcs=selected_funcs)
 """
 import numpy as np
 from scipy import stats as st

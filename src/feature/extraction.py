@@ -1,7 +1,8 @@
 """ Feature extraction functions """
 from typing import Dict, Tuple
+import warnings
 import numpy as np
-
+from collections import defaultdict
 try:
     from sklearn.externals import joblib
 except (ImportError, ModuleNotFoundError):
@@ -13,69 +14,52 @@ from feature.univariate_extended import get_univariate_funcs_extended
 from feature.bivariate_extended import get_bivariate_funcs_extended
 
 
-def _check_all_funcs(selected, feature_funcs, feature_funcs_extended):
-    """Selection checker.
-    Checks if the elements of ``selected`` are either strings (alias of a
-    feature function defined in mne-features) or tuples of the form
-    ``(str, callable)`` (user-defined feature function).
-    Parameters
-    ----------
-    selected : list of str or tuples
-        Names of the selected feature functions.
-    feature_funcs : dict
-        Dictionary of the feature functions (univariate and bivariate)
-        available in mne-features.
-    Returns
-    -------
-    valid_funcs : list of tuples
+def _check_all_funcs(selected, feature_funcs, feature_funcs_extended=None):
     """
+    Checks if selected features are valid function names or user-defined functions.
 
-    valid_funcs = list()
-    _intrinsic_mne_func_names = feature_funcs.keys()  # MNE-feature alias
-    _intrinsic_func_names_extended = feature_funcs_extended.keys()  # NeuroKyma features alias
-    all_func_names = {**feature_funcs, **feature_funcs_extended}.keys()
-    for s in selected:
-        if isinstance(s, str):
-            if s in _intrinsic_mne_func_names:
-                valid_funcs.append(s)
-            elif s in _intrinsic_func_names_extended:
-                valid_funcs.append((s, feature_funcs_extended[s]))
+    Parameters:
+    - selected (list): List of selected feature function names or tuples.
+    - feature_funcs (dict): Dictionary of available MNE-Features functions.
+    - feature_funcs_extended (dict, optional): Dictionary of available custom functions (if applicable).
+
+    Returns:
+    - valid_funcs (list): List of valid function names or tuples (user-defined functions).
+
+    Raises:
+    - ValueError: If an invalid function name, tuple format, or alias conflict is encountered.
+    """
+    valid_funcs = []
+    mne_func_names = set(feature_funcs.keys())
+    extended_func_names = set() if feature_funcs_extended is None else set(feature_funcs_extended.keys())
+    all_func_names = mne_func_names.union(extended_func_names)
+
+    for item in selected:
+        if isinstance(item, str):
+            # Check for MNE-Features function or extended function with matching alias
+            if item in mne_func_names:
+                valid_funcs.append(item)
+            elif feature_funcs_extended and item in extended_func_names:
+                valid_funcs.append((item, feature_funcs_extended[item]))
             else:
                 raise ValueError(
-                    f"The given alias {s} is not valid. The valid aliases for feature functions are "
-                    f"the ones from: \nmne-features: {_intrinsic_mne_func_names} \n NeuroKyma "
-                    f"features: {_intrinsic_func_names_extended}."
+                    f"Invalid function name: {item}. Valid names include:\n"
+                    f"- MNE-Features: {', '.join(mne_func_names)}\n"
+                    f"{(lambda d: ', '.join(d) if d else 'No custom functions provided')(extended_func_names)}"
                 )
-        elif isinstance(s, tuple):
-            if len(s) != 2:
-                raise ValueError(
-                    "The given tuple (%s) is not of length 2. "
-                    "Each user-defined feature function should "
-                    "be passed as a tuple of the form "
-                    "`(str, callable)`." % str(s)
-                )
-            else:
-                # Case of a user-defined feature function
-                if s[0] in all_func_names:
-                    raise ValueError(
-                        f"A user-defined feature function was given an alias {s[0]} which is already "
-                        "used by mne-features or NeuroKyma features. \n The list of aliases used by "
-                        f"mne-features is: {_intrinsic_mne_func_names}. \n The list of aliases of the "
-                        f"NeuroKyma features is: {_intrinsic_func_names_extended}."
-                    )
-                else:
-                    valid_funcs.append(s)
+        elif isinstance(item, tuple) and len(item) == 2:
+            # Check for user-defined function format and alias conflict
+            alias, func = item
+            if alias in all_func_names:
+                raise ValueError(f"Alias conflict: {alias} already used by a built-in function.")
+            valid_funcs.append(item)
         else:
-            # Case where the element is neither a string, nor a tuple
-            raise ValueError(
-                "%s is not a valid feature function and cannot "
-                "be interpreted as a user-defined feature "
-                "function." % str(s)
-            )
+            raise ValueError(f"Invalid feature function format: {item}")
+
     if not valid_funcs:
-        raise ValueError("No valid feature function was given.")
-    else:
-        return valid_funcs
+        raise ValueError("No valid feature functions provided.")
+
+    return valid_funcs
 
 
 def get_features(
@@ -89,20 +73,26 @@ def get_features(
     keep_original_shape=True,
 ):
     """
-    Wrapper of mne_features.extract_features() function extended with features from feature.univariate_extended and
-    feature.bivariate_extended.
-    MNE-Features official documentation: https://mne.tools/mne-features/index.html
-    :param data:
-    :param sfreq:
-    :param features_list:
-    :param funcs_params:
-    :param n_jobs:
-    :param ch_names:
-    :param return_as_df:
-    :param keep_original_shape:
-    :return:
-    """
+    Extracts features from MNE data using MNE-Features and custom univariate/bivariate functions.
+    This function simplifies feature extraction by combining built-in MNE-Features functions
+    with user-defined feature functions for univariate and bivariate analysis.
 
+    Parameters:
+    - data (mne.io.BaseRaw | mne.Epochs): The MNE data object.
+    - features_list (list): A list of feature names (from MNE-Features or custom functions).
+    - sfreq (float): The sampling frequency of the data (Hz).
+    - funcs_params (dict, optional): A dictionary containing parameters for custom functions.
+    - n_jobs (int): The number of parallel jobs to use (default: 1).
+    - ch_names (list, optional): A list of channel names to use (default: all channels).
+    - return_as_df (bool): Whether to return the features as a DataFrame (default: False).
+    - keep_original_shape (bool): Whether to reshape the output to match data shape (default: True).
+
+    Returns:
+    - feature_matrix (np.ndarray | pd.DataFrame): The extracted feature matrix.
+
+    Raises:
+    - Warning: If reshaping fails due to bivariate features.
+    """
     univariate_funcs = get_univariate_funcs(sfreq)
     bivariate_funcs = get_bivariate_funcs(sfreq)
     feature_funcs = univariate_funcs.copy()
@@ -121,12 +111,13 @@ def get_features(
 
     if keep_original_shape:
         try:
+            # Reshape based on data dimensions, handle potential errors
             feature_matrix = feature_matrix.reshape(data.shape[0], data.shape[1], -1)
         except ValueError:
-            raise Warning(
-                f"Feature matrix with shape {np.shape(feature_matrix)} could not be reshaped according to "
-                f"the input matrix original shape {np.shape(data)}. This may be because of the presence of"
-                f"bivariate features among the selected features."
+            message = (
+                f"Reshaping failed for feature matrix ({np.shape(feature_matrix)}). "
+                f"This likely occurs due to bivariate features presents among input features."
             )
+            warnings.warn(message)
 
     return feature_matrix

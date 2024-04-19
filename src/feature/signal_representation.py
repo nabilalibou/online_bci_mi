@@ -45,7 +45,7 @@ def get_freq_bands(
 
 """
 - PSD, FFT, STFT, DFT, WT => add the possibility to have directly the spectrum (power*freq) and the
-periodogram (estimated power on windows of time*freq). Have timefreqchan but with option on windows, overlap, method,
+periodogram (estimated power on windows of time*freq). timefreqchan class but with option on windows, overlap, method,
 log, normalization (like mne-feature) ==> use power_spectrum from mne-feature utils. (welch, fft, multitaper).
 """
 # compute_pow_spectr():
