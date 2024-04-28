@@ -1,13 +1,14 @@
 """
 """
 import numpy as np
+from typing import Dict, Union, List
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.linear_model import LogisticRegression, SGDClassifier, Perceptron
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import LinearSVC, SVC
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, NMF
 from sklearn.neural_network import MLPClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, GradientBoostingClassifier
@@ -114,43 +115,113 @@ def return_scorer_dict(score_selection):
     return score_dict
 
 
-def _return_clf_dict(clf_selection, all_clf_dict):
-    clf_dict = {}
-    for clf in clf_selection:
-        if clf not in all_clf_dict:
-            raise KeyError(f"Error: classifier {clf} not found in 'all_clf_dict")
-        for pipeline_name, pipeline_value in all_clf_dict.items():
-            if clf == pipeline_name:
-                clf_dict[pipeline_name] = pipeline_value
-    return clf_dict
+def _return_pipeline_dict(pipeline_selection, all_pipeline_dict):
+    pipeline_dict = {}
+    for pipeline in pipeline_selection:
+        if pipeline not in all_pipeline_dict:
+            raise KeyError(f"Error: classifier {pipeline} not found in 'all_pipeline_dict")
+        for pipeline_name, pipeline_value in all_pipeline_dict.items():
+            if pipeline == pipeline_name:
+                pipeline_dict[pipeline_name] = pipeline_value
+    return pipeline_dict
 
 
-def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
+def _build_pipeline_from_dict(estim_name, input_estim_param, all_estimators):
     """
-    Key insensitive dictionary of different Estimators and Transformers objects to construct sklearn pipelines.
+    Helper function to build pipeline steps and parameters from a dictionary definition.
+    """
+    estimator_found = {}
+    for i, (name, estim_funct) in enumerate(all_estimators.items()):
+        if estim_name.lower() == name.lower():
+            estimator_found = {'estim_name': name, 'estim_funct': estim_funct}
+            if isinstance(input_estim_param, dict):
+                for param_name in input_estim_param.keys():
+                    if not param_name.startswith(f"{name}__"):
+                        input_estim_param[f"{name}__{param_name}"] = input_estim_param.pop(param_name)
+            else:
+                raise TypeError(f"Estimators parameters for '{estim_name}' should be a dictionary")
+            break
+    return estimator_found, input_estim_param
 
-    For clf in clf_selection: if in big dict{"name": callable} <= need defaut values for kerasclassifier to be
-    instantiated no ? how to give params easily. agnostic to maj.
 
-    access param vocab = https://scikit-learn.org/stable/modules/compose.html#nested-parameters
+def _build_pipeline_from_str(estimator_name, all_estimators):
+    """
+    Helper function to build pipeline steps from a string of estimator names.
+    """
+    estimator_found = {}
+    for i, (name, estim_funct) in enumerate(all_estimators.items()):
+        if estimator_name.lower() == name.lower():
+            estimator_found = {'estim_name': name, 'estim_funct': estim_funct}
+            break
+    return estimator_found
 
-    Notes: Covariance estimator (Cov), CSP and others MNE Estimators/Transformers as well as Keras CNN take 3d data
+
+def _build_pipeline(pipeline_prompt, all_estimators):
+    """
+    Helper function to build pipeline steps and parameters based on the user provided format (dict or string)
+
+    Args:
+        pipeline_prompt: A dictionary specifying pipeline configuration or a string of estimator names separated by '+'
+        all_estimators: A dictionary containing available estimators
+
+    Returns:
+        A tuple containing a list of pipeline steps and a dictionary of estimator parameters.
+    """
+    steps = []
+    estimator_params = {}
+    if isinstance(pipeline_prompt, dict):
+        for estim_name, input_estim_param in pipeline_prompt.items():
+            estimator_found, input_estim_param = _build_pipeline_from_dict(estim_name, input_estim_param, all_estimators)
+            estimator_params.update(input_estim_param)
+            if not estimator_found:
+                raise ValueError(f"Invalid estimator name: '{estim_name}'")
+            steps.append((estimator_found, all_estimators[estimator_found]))  # Use name directly from found estimator
+    else:
+        pipeline_name_list = [x.strip() for x in pipeline_prompt.split("+")]
+        for estimator_name in pipeline_name_list:
+            estimator_found = _build_pipeline_from_str(estimator_name, all_estimators)
+            if not estimator_found:
+                raise ValueError(f"Invalid estimator name: '{estimator_name}'")
+            steps.append((estimator_found, all_estimators[estimator_found]))  # Use name directly from found estimator
+
+    return steps, estimator_params
+
+
+def return_pipelines(pipeline_selection: Union[List[Dict], List[str]], nn_default_params: Dict) -> Dict[str, Pipeline]:
+    """
+    This function constructs scikit-learn pipelines based on user-provided configurations and default neural network
+    parameters.
+
+    Notes:
+    - For pipeline in pipeline_selection: if in big dict{"name": callable} <= need defaut values for kerasclassifier to
+    be instantiated no ? how to give params easily. agnostic to maj.
+    - access param vocab = https://scikit-learn.org/stable/modules/compose.html#nested-parameters
+    - Covariance estimator (Cov), CSP and others MNE Estimators/Transformers as well as Keras CNN take 3d data
     (covariance need time point per channel). Others classifiers that are sklearn Estimators and Transformers take 2d
     data (sample, feature).
-
-    Notes: Some of them should be transferred to feature using {Transformer()}.Transform(X). Like CSP, Cov, ERPCov,
+    - Some of them should be transferred to feature using {Transformer()}.Transform(X). Like CSP, Cov, ERPCov,
     XdawnCov, Coh that take (epoch, channel, time) in input and ouput (epoch, channel, channel).
     Or EMS taking (epoch, channel, time) and output (epoch, channel, time), Xdawn taking (epoch, channel, time) and
     output (epoch, n_components*n_event_types, time). This way it will take less computation time if we compute them
     before cross-validation and we can use combine feature with feature_extraction.py
+    - Wrap features in Transformers: https://scikit-learn.org/stable/modules/preprocessing.html#custom-transformers
+    https://scikit-learn.org/stable/modules/compose.html#featureunion-composite-feature-spaces
+    - Cache reused Transformers/Estimators: https://scikit-learn.org/stable/auto_examples/compose/
+    plot_compare_reduction.html#caching-transformers-within-a-pipeline
 
-    :param nn_defaut_params:
-    :param clf_selection:
-    :param clf_parameter:
-    :param clf_params:
-    :return:
+    Args:
+        pipeline_selection: A list containing either dictionaries or lists of strings.
+            - Dictionaries specify individual pipelines with estimator names as keys and their parameters as values.
+            - Lists of strings define pipelines consisting of a sequence of estimator names.
+        nn_default_params: A dictionary containing default hyperparameters for the 'NN' (KerasClassifier) estimator.
+
+    Returns:
+        A dictionary mapping pipeline names (strings) to constructed scikit-learn Pipeline objects.
+
+    Raises:
+        TypeError: If 'pipeline_selection' is not a list or if estimator parameters are not dictionaries.
+        ValueError: If an invalid estimator name is provided.
     """
-
     dropout_rate = nn_default_params["dropout_rate"]
     learning_rate = nn_default_params["learning_rate"]
     nbr_epochs = nn_default_params["nbr_epochs"]
@@ -182,6 +253,7 @@ def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
         "SelectPercent": SelectPercentile(percentile=10),
         "GenUnivSelect": GenericUnivariateSelect(mode="percentile", param=1e-05),
         "SelectFromModel": SelectFromModel(LinearSVC(penalty="l1"), threshold=None),
+        "NMF": NMF(max_iter=1_000),
         # sklearn classifiers
         "KNN": KNeighborsClassifier(n_neighbors=5),
         "SVC": SVC(C=1.0, kernel="rbf", gamma="scale"),
@@ -329,22 +401,38 @@ def return_clf_dict(clf_selection, nn_default_params, clf_params={}):
     }
 
     pipeline_dict = {}
-    for pipeline_prompt in clf_selection:
-        pipeline_name_list = [x.strip(" ") for x in pipeline_prompt.split("+")]
-        steps = []
-        for clf_name in pipeline_name_list:
-            clf_found = False
-            for i, (estim_name, estim_funct) in enumerate(all_estimators.items()):
-                if clf_name.lower() == estim_name.lower():
-                    steps.append((f"{estim_name}", estim_funct))
-                    clf_found = True
-                if i == len(all_estimators.keys()) - 1 and not clf_found:
-                    raise ValueError(
-                        f"'{clf_name}' is not a valid estimator name. Valid estimator are :"
-                        f"{all_estimators.keys()}"
-                    )
+    for pipeline_prompt in pipeline_selection:
+        if not isinstance(pipeline_prompt, (list, dict)):
+            raise TypeError("Input 'pipeline_selection' must be a list containing dictionaries or lists of strings")
+        steps, estimator_params = _build_pipeline(pipeline_prompt, all_estimators)
         constructed_pipeline = Pipeline(steps)
-        constructed_pipeline.set_params(**clf_params)
-        pipeline_dict[pipeline_prompt] = constructed_pipeline
+        constructed_pipeline.set_params(**estimator_params)
+        pipeline_dict[str(pipeline_prompt)] = constructed_pipeline
+
+    # pipeline_dict = {}
+    # for pipeline_prompt in pipeline_selection:
+    #     if not isinstance(pipeline_prompt, (list, dict)):
+    #         raise TypeError("Input 'pipeline_selection' must be a list containing dictionaries or lists of strings")
+    #     estimator_params = {}
+    #     steps = []
+    #     if isinstance(pipeline_prompt, dict):
+    #         for estim_name, input_estim_param in pipeline_prompt.items():
+    #             estimator_found, input_estim_param = _build_pipeline_from_dict(estim_name, input_estim_param, all_estimators)
+    #             estimator_params.update(input_estim_param)
+    #             if not estimator_found:
+    #                 raise ValueError(f"Invalid estimator name: '{estim_name}'")
+    #             else:
+    #                 steps.append((f"{estimator_found['estim_name']}", estimator_found['estim_funct']))
+    #     else:
+    #         pipeline_name_list = [x.strip() for x in pipeline_prompt.split("+")]
+    #         for estimator_name in pipeline_name_list:
+    #             estimator_found = _build_pipeline_from_str(estimator_name, all_estimators)
+    #             if not estimator_found:
+    #                 raise ValueError(f"Invalid estimator name: '{estimator_name}'")
+    #             else:
+    #                 steps.append((f"{estimator_found['estim_name']}", estimator_found['estim_funct']))
+    #     constructed_pipeline = Pipeline(steps)
+    #     constructed_pipeline.set_params(**estimator_params)
+    #     pipeline_dict[str(pipeline_prompt)] = constructed_pipeline
 
     return pipeline_dict

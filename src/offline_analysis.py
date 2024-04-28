@@ -4,7 +4,7 @@ import mne
 import numpy as np
 from utils.preprocessing_utils import get_reported_bad_trials, offline_preprocess
 from feature.extraction import get_features
-from classification.pipelines import return_scorer_dict, return_clf_dict
+from classification.pipelines import return_scorer_dict, return_pipelines
 from classification.classification_utils import evaluate_intra_subject, evaluate_inter_subject
 
 # matplotlib.use("Qt5Agg")
@@ -15,7 +15,7 @@ from classification.classification_utils import evaluate_intra_subject, evaluate
 
 # =============== Constants ===============
 # Preprocessing parameters
-doPrepro = True
+doPrepro = False
 data_repo = "../data"
 save_prepro = f"../results/data_preprocessed/"
 save_data = True
@@ -42,9 +42,10 @@ slide_windows_size = (
     1  # Will transform the feature into a 3D matrices to have batch of 2D frames
 )
 score_selection = ["accuracy", "balanced_acc"]
-clf_selection = ["KNN", "KNNnostd", "CSP + KNN", "CSP4 + KNN", "CSP4 + KNNstd", "rbfSVC", "eegnet"]
+pipeline_selection = ["KNN", "KNNnostd", "CSP + KNN", "CSP4 + KNN", "CSP4 + KNNstd", "rbfSVC", "eegnet"]
 # "PCA3d + CSP + KNN", "PCA3d + CSP + LDA", "PCA3d + CSP +  LR", "PCA3d + CSP + LR",
-clf_selection = ["Vect + KNN", "Vect + SVC", "Cov + TS + LR"]  # "CSP + KNN", "CSP + stdScale + KNN" "Cov + TS + LR"
+pipeline_selection = ["Vect + KNN", "Vect + SVC", "Cov + TS + LR"] # "CSP + KNN", "CSP + stdScale + KNN" "Cov + TS + LR"
+pipeline_selection = ["Vect + KNN"]
 report_path = f"../results/classif_report/{eval_mode}_{n_splits}fold_{nbr_runs}runs_{data_path_suffix}"
 
 
@@ -140,13 +141,13 @@ nn_defaut_params = dict(
     sampling_rate=sfreq,
 )
 score_dict = return_scorer_dict(score_selection)
-clf_dict = return_clf_dict(clf_selection, nn_defaut_params)
+pipeline_dict = return_pipelines(pipeline_selection, nn_defaut_params)
 # avg_col_names = ["Avg_by_subj", "Avg_by_cond", "Avg_total"]
 
 match eval_mode:
     case "intra":
-        evaluate_intra_subject(data_dict, n_splits, clf_dict, score_dict, nbr_runs, report_path)
+        evaluate_intra_subject(data_dict, n_splits, pipeline_dict, score_dict, nbr_runs, report_path)
     case "inter":
-        evaluate_inter_subject(data_dict, clf_dict, score_dict, nbr_runs, report_path)
+        evaluate_inter_subject(data_dict, pipeline_dict, score_dict, nbr_runs, report_path)
     case _:
         raise ValueError("eval_mode need to be either 'intra' or 'inter'")
