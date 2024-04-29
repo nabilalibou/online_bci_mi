@@ -1,5 +1,6 @@
 """
 """
+import copy
 import numpy as np
 from typing import Dict, Union, List
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
@@ -131,17 +132,19 @@ def _build_pipeline_from_dict(estim_name, input_estim_param, all_estimators):
     Helper function to build pipeline steps and parameters from a dictionary definition.
     """
     estimator_found = {}
+    estimator_parameters = {}
     for i, (name, estim_funct) in enumerate(all_estimators.items()):
         if estim_name.lower() == name.lower():
             estimator_found = {'estim_name': name, 'estim_funct': estim_funct}
             if isinstance(input_estim_param, dict):
+                estimator_parameters = copy.deepcopy(input_estim_param)
                 for param_name in input_estim_param.keys():
                     if not param_name.startswith(f"{name}__"):
-                        input_estim_param[f"{name}__{param_name}"] = input_estim_param.pop(param_name)
+                        estimator_parameters[f"{name}__{param_name}"] = estimator_parameters.pop(param_name)
             else:
                 raise TypeError(f"Estimators parameters for '{estim_name}' should be a dictionary")
             break
-    return estimator_found, input_estim_param
+    return estimator_found, estimator_parameters
 
 
 def _build_pipeline_from_str(estimator_name, all_estimators):
@@ -172,17 +175,18 @@ def _build_pipeline(pipeline_prompt, all_estimators):
     if isinstance(pipeline_prompt, dict):
         for estim_name, input_estim_param in pipeline_prompt.items():
             estimator_found, input_estim_param = _build_pipeline_from_dict(estim_name, input_estim_param, all_estimators)
-            estimator_params.update(input_estim_param)
+            if input_estim_param:
+                estimator_params.update(input_estim_param)
             if not estimator_found:
                 raise ValueError(f"Invalid estimator name: '{estim_name}'")
-            steps.append((estimator_found, all_estimators[estimator_found]))  # Use name directly from found estimator
+            steps.append((estimator_found['estim_name'], estimator_found['estim_funct']))  # Use name directly from found estimator
     else:
         pipeline_name_list = [x.strip() for x in pipeline_prompt.split("+")]
         for estimator_name in pipeline_name_list:
             estimator_found = _build_pipeline_from_str(estimator_name, all_estimators)
             if not estimator_found:
                 raise ValueError(f"Invalid estimator name: '{estimator_name}'")
-            steps.append((estimator_found, all_estimators[estimator_found]))  # Use name directly from found estimator
+            steps.append((estimator_found['estim_name'], estimator_found['estim_funct']))  # Use name directly from found estimator
 
     return steps, estimator_params
 
@@ -399,40 +403,14 @@ def return_pipelines(pipeline_selection: Union[List[Dict], List[str]], nn_defaul
             estimator=None, n_estimators=50, learning_rate=1.0, algorithm="SAMME.R"
         ),
     }
-
+    assert isinstance(pipeline_selection, list)
     pipeline_dict = {}
     for pipeline_prompt in pipeline_selection:
-        if not isinstance(pipeline_prompt, (list, dict)):
+        if not isinstance(pipeline_prompt, (str, dict)):
             raise TypeError("Input 'pipeline_selection' must be a list containing dictionaries or lists of strings")
         steps, estimator_params = _build_pipeline(pipeline_prompt, all_estimators)
         constructed_pipeline = Pipeline(steps)
         constructed_pipeline.set_params(**estimator_params)
         pipeline_dict[str(pipeline_prompt)] = constructed_pipeline
-
-    # pipeline_dict = {}
-    # for pipeline_prompt in pipeline_selection:
-    #     if not isinstance(pipeline_prompt, (list, dict)):
-    #         raise TypeError("Input 'pipeline_selection' must be a list containing dictionaries or lists of strings")
-    #     estimator_params = {}
-    #     steps = []
-    #     if isinstance(pipeline_prompt, dict):
-    #         for estim_name, input_estim_param in pipeline_prompt.items():
-    #             estimator_found, input_estim_param = _build_pipeline_from_dict(estim_name, input_estim_param, all_estimators)
-    #             estimator_params.update(input_estim_param)
-    #             if not estimator_found:
-    #                 raise ValueError(f"Invalid estimator name: '{estim_name}'")
-    #             else:
-    #                 steps.append((f"{estimator_found['estim_name']}", estimator_found['estim_funct']))
-    #     else:
-    #         pipeline_name_list = [x.strip() for x in pipeline_prompt.split("+")]
-    #         for estimator_name in pipeline_name_list:
-    #             estimator_found = _build_pipeline_from_str(estimator_name, all_estimators)
-    #             if not estimator_found:
-    #                 raise ValueError(f"Invalid estimator name: '{estimator_name}'")
-    #             else:
-    #                 steps.append((f"{estimator_found['estim_name']}", estimator_found['estim_funct']))
-    #     constructed_pipeline = Pipeline(steps)
-    #     constructed_pipeline.set_params(**estimator_params)
-    #     pipeline_dict[str(pipeline_prompt)] = constructed_pipeline
 
     return pipeline_dict

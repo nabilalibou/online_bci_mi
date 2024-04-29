@@ -45,7 +45,8 @@ score_selection = ["accuracy", "balanced_acc"]
 pipeline_selection = ["KNN", "KNNnostd", "CSP + KNN", "CSP4 + KNN", "CSP4 + KNNstd", "rbfSVC", "eegnet"]
 # "PCA3d + CSP + KNN", "PCA3d + CSP + LDA", "PCA3d + CSP +  LR", "PCA3d + CSP + LR",
 pipeline_selection = ["Vect + KNN", "Vect + SVC", "Cov + TS + LR"] # "CSP + KNN", "CSP + stdScale + KNN" "Cov + TS + LR"
-pipeline_selection = ["Vect + KNN"]
+pipeline_selection = ["Vect + SVC", {"Vect": {}, "KNN": {"n_neighbors": 6}}]
+# pipeline_selection = [{"Vect": {}, "KNN": {"n_neighbors": 6}}, {"Vect": {}, "SVC": {"kernel": "poly"}}]
 report_path = f"../results/classif_report/{eval_mode}_{n_splits}fold_{nbr_runs}runs_{data_path_suffix}"
 
 
