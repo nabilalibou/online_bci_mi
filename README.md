@@ -23,8 +23,11 @@ classification and control.
 - Tasks: Three motor execution (ME) and three motor imagery (MI) tasks, each focused on a different limb (left arm, right 
 arm, right leg).
 - Data Acquisition: 32-channel EEG system (TMSI) with 2064 Hz sampling rate using a standard 10/20 electrode montage.
-- Protocol: Each session consisted of an initial resting state followed by 50 repetitions of a sequence combining ME and 
-MI tasks as illustrated in the diagram below:
+- Protocol: Each session consisted of an initial resting state followed by 50 repetitions of a sequence combining ME tasks 
+(raising a limb then put it back to rest), a 5sec break, the MI tasks (imagining the ME task) and finally a 5sec break
+before starting the next repetition.  
+The protocol is illustrated as a diagram below:
+
 
 <p align="center">
 <img src="docs\readme_img\protocol.png" width="547" height="913">
